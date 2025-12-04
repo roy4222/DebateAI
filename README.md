@@ -51,10 +51,13 @@
 | **Python 工具鏈** | **uv** | • 現代化依賴管理（比 pip 快 10-100 倍）<br>• 內建依賴鎖定（uv.lock）<br>• 統一工具鏈 |
 | **前端 Framework** | **Next.js 14+** | • 使用 App Router<br>• 部署於 **Cloudflare Pages**<br>• 使用 `output: 'export'` 靜態導出<br>• Phase 1 用 `EventSource` (GET)<br>• Phase 2+ 用 `fetch + ReadableStream` (POST) |
 | **後端 Framework** | **FastAPI** | • Python 3.11+<br>• 部署於 **Google Cloud Run** (Docker Container)<br>• 使用 **uv** 管理依賴<br>• 提供 SSE 串流接口（私有部署） |
-| **AI 框架** | **LangGraph 0.2+** | • 最新版本的 multi-agent 框架<br>• 使用 `astream_events` API<br>• 原生支援工具調用與串流 |
+| **AI 框架** | **LangGraph v1** | • v1 是穩定釋出，核心 graph API/執行模型維持不變<br>• 使用 `astream_events`/`stream` 串流，checkpointing 與 persistence 一級公民<br>• 官方已將 `create_react_agent` 標示 deprecated，建議改用 LangChain `create_agent`（底層仍是 LangGraph） |
 | **LLM 核心** | **Groq** | • Llama-3.1-70b 模型<br>• 利用 Groq 的 LPU 提供每秒 300+ token 的超快推理<br>• 使用 streaming 模式實現打字機效果 |
 | **搜尋工具** | **Tavily + DuckDuckGo Text** | • **Tavily**：專為 AI 設計，伺服器端完成內容清洗（1000 次/月免費）<br>• **DuckDuckGo**：文字摘要搜尋，完全免費備援<br>• **三層容錯**：Tavily → DDGS Text → 優雅降級<br>• **回應速度**：< 1 秒，適合即時辯論<br>• **Phase 4 可選**：Playwright 深度爬取（獨立 Cloud Function） |
 | **通訊協定** | **HTTP + SSE** | • Phase 1: GET + EventSource (簡單測試)<br>• Phase 2+: POST + fetch + ReadableStream (完整功能) |
+
+> ⚠️ **戰略警語：先保辯論節奏，再談深爬**  
+> Phase 1-3 僅使用 Tavily/DDGS 文字搜尋，確保 <1 秒開始串流；Playwright 視為 Phase 4 的「深度查證」外掛，應獨立部署（Cloud Functions/獨立容器）後再由主流程呼叫，避免拖慢 Cloud Run 冷啟動與記憶體。
 
 ### 2.3 架構圖
 
@@ -141,15 +144,17 @@ class DebateState(TypedDict):
 
 **實現方式：**
 
-1. **Backend (LangGraph)**
+1. **Backend (LangGraph 1.0)**
    ```python
-   # 使用 astream_events(version="v2")
-   async for event in graph.astream_events(state, version="v2"):
-       if event["event"] == "on_chat_model_stream":
-           # 捕捉每個 token
-           token = event["data"]["chunk"].content
-           node = event["tags"][0]  # v2 從 tags 獲取節點資訊
-           yield {"node": node, "text": token}
+   # 使用 astream() + stream_mode="messages"
+   async for message, metadata in graph.astream(
+       state,
+       stream_mode="messages"
+   ):
+       # 捕捉每個 token
+       if hasattr(message, 'content') and message.content:
+           node = metadata.get("langgraph_node", "unknown")
+           yield {"node": node, "text": message.content}
    ```
 
 2. **Transport (SSE)**
@@ -231,6 +236,8 @@ class DebateState(TypedDict):
 ### 🟢 Phase 3: 工具調用與完善
 
 **目標**：加入聯網能力，讓辯論言之有物。
+
+> ⚠️ 本階段只整合 Tavily/DDGS 文字搜尋，不引入 Playwright；若需深度爬取，留待 Phase 4 以獨立外掛服務方式接入。
 
 #### 後端任務
 - [ ] 整合 **Tavily（主）+ DuckDuckGo（備援）** 三層容錯搜尋工具
@@ -639,13 +646,13 @@ async def web_search(query: str) -> dict:
 
 **規劃完成，準備開始實施**
 
-### 7.2 最新更新（2025-12-03）
+### 7.2 最新更新（2025-12-04）
 
 根據最新技術棧和最佳實踐，本專案實施計畫已完成以下更新：
 
 #### ✅ 技術棧優化
 - **採用 uv 全家桶**：現代化 Python 工具鏈（比 pip 快 10-100 倍）
-- **LangGraph 0.2+**：使用最新版本 API
+- **LangGraph v1**：穩定釋出，核心 API 不變；使用 `astream_events`/`stream` 串流，`create_react_agent` 已 deprecated，優先改用 LangChain `create_agent`
 - **Tavily 優先搜尋**：三層容錯策略（Tavily → DuckDuckGo → 優雅降級）
 
 #### ✅ 架構改進
@@ -659,7 +666,7 @@ async def web_search(query: str) -> dict:
 |:---|:---|:---|:---|
 | **Python 工具鏈** | uv | latest | 現代化依賴管理 |
 | **後端框架** | FastAPI | 0.115+ | 高效能 async API |
-| **AI 框架** | LangGraph | 0.2+ | 最新 multi-agent API |
+| **AI 框架** | LangGraph | 1.0+ | 最新穩定版 multi-agent API |
 | **LLM** | Groq | Llama-3.1-70b | 超快推理速度 |
 | **搜尋工具** | Tavily + DuckDuckGo | - | 三層容錯 |
 | **前端** | Next.js | 14+ | App Router |

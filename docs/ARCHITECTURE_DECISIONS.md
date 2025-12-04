@@ -197,5 +197,42 @@ Tavily API：1000 次/月免費
 
 ---
 
+---
+
+## 8. 技術版本更新記錄
+
+### 2025-12-04：LangGraph 1.0 更新
+
+**關鍵變更**：
+- ✅ **LangGraph 升級至 1.0**：從 0.2+ 升級至穩定版 1.0
+- ✅ **串流 API 簡化**：`astream_events(version="v2")` → `astream(stream_mode="messages")`
+- ✅ **向後相容**：核心 StateGraph API 保持不變
+
+**新 API 範例**：
+```python
+# 舊版 (0.2+)
+async for event in graph.astream_events(state, version="v2"):
+    if event["event"] == "on_chat_model_stream":
+        node = next((tag.split(":")[-1] for tag in event.get("tags", [])))
+        token = event["data"]["chunk"].content
+
+# 新版 (1.0)
+async for message, metadata in graph.astream(state, stream_mode="messages"):
+    if hasattr(message, 'content') and message.content:
+        node = metadata["langgraph_node"]
+        token = message.content
+```
+
+**優點**：
+- 🚀 更簡潔的 API，無需複雜的事件過濾
+- 📦 metadata 結構更清晰，直接訪問 `langgraph_node`
+- 🔧 支援多模式串流：`stream_mode=["messages", "updates", "values"]`
+
+**參考資料**：
+- [LangGraph 1.0 Release Notes](https://docs.langchain.com/oss/python/releases/langgraph-v1)
+- [Streaming Documentation](https://docs.langchain.com/oss/python/langgraph/streaming)
+
+---
+
 **最後更新**：2025-12-04
-**文件狀態**：✅ 最終版本
+**文件狀態**：✅ 已更新至 LangGraph 1.0

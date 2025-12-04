@@ -35,7 +35,7 @@
    - 明確的部署策略
 
 2. **成熟的技術選型**
-   - **Python LangGraph 0.2+**: 最新版本的 multi-agent 框架
+   - **Python LangGraph v1**: 穩定釋出，多 Agent 框架；`create_react_agent` 已 deprecated，建議改用 LangChain `create_agent`（底層仍是 LangGraph）
    - **FastAPI**: 高效能的 Python web 框架，原生支援 async/SSE
    - **Next.js 14+**: 穩定的 React 框架
    - **Groq**: 業界領先的推理速度（300+ tokens/sec）
@@ -68,18 +68,22 @@
 
 > **本章節基於實際網路查證，針對原計畫進行關鍵修正**
 
-### ✅ 已驗證技術點（無需修改）
+### 🆕 LangGraph v1 重點（穩定釋出）
+- v1 為穩定版，核心 graph/state/node/edge 模型與執行行為保持不變，升級成本低（`pip install -U langgraph`/`uv add langgraph` 即可）。
+- 官方已將 LangGraph 的 `create_react_agent` 標示 deprecated，建議改用 LangChain v1 的 `create_agent`（底層仍跑 LangGraph）。
+- checkpointing/persistence/streaming/human-in-the-loop 仍是一級公民，現有 `astream_events`/`stream` 使用方式可直接沿用。
+- 與 LangChain v1 並行設計，可先用 LangChain 高階 API，再視需要下鑽 LangGraph 做自訂 orchestration。
 
-#### 1. LangGraph 0.2+ 串流機制
-**驗證結果：✅ 完全正確**
-- `astream_events(version="v2")` 是官方推薦的最新 API
-- v2 比 v1 更穩定，v1 將在 0.4.0 版本中移除
-- `on_chat_model_stream` 事件確實可用於 token 級別串流
-- 節點資訊從 `tags` 中獲取（格式：`seq:step:{node_name}`）
+### ✅ 已驗證技術點（2025-12-04 更新）
+
+#### 1. LangGraph v1（穩定版）
+**驗證結果：✅ 升級成本低，核心 API 不變**
+- v1 是穩定釋出，graph/state/node/edge 執行模型維持原樣，既有程式可直接升級。
+- checkpointing、persistence、streaming、human-in-the-loop 持續為一級公民；現有 `astream_events`/`stream` 使用方式可繼續。
+- LangGraph 內建的 `create_react_agent` 已被標註為 deprecated，官方建議改用 LangChain v1 的 `create_agent`（底層同樣使用 LangGraph）。
 
 **來源：**
-- [LangGraph Streaming Documentation](https://docs.langchain.com/oss/python/langgraph/streaming)
-- [Migrating to astream_events v2](https://python.langchain.com/docs/versions/v0_2/migrating_astream_events/)
+- [LangGraph v1 Release Notes](https://docs.langchain.com/oss/python/releases/langgraph-v1)
 
 #### 2. uv 工具鏈效能
 **驗證結果：✅ 宣稱正確，甚至更好**
@@ -410,8 +414,8 @@ const startDebate = async () => {
 ### 📚 參考資料（已驗證）
 
 **LangGraph & Streaming:**
+- [LangGraph 1.0 Release Notes](https://docs.langchain.com/oss/python/releases/langgraph-v1)
 - [LangGraph Streaming Documentation](https://docs.langchain.com/oss/python/langgraph/streaming)
-- [Migrating to astream_events v2](https://python.langchain.com/docs/versions/v0_2/migrating_astream_events/)
 - [LangGraph GitHub Discussion #533](https://github.com/langchain-ai/langgraph/discussions/533)
 
 **Python Tooling:**
@@ -532,6 +536,9 @@ Demo 前 30 分鐘執行腳本，每 5 分鐘 ping 一次保持溫熱
 - **Day 25-27**: 文檔撰寫、部署優化
 - **Day 28-30**: 最終測試、準備展示材料
 
+> ⚠️ **戰略警語：Phase 1-3 只用文字搜尋**  
+> 保持辯論 <1 秒啟動的節奏：Tavily（主）+ DuckDuckGo Text（備）即可，不要把 Playwright 塞進主 API。若需深度爬取，放到 Phase 4，並獨立成 Cloud Functions/獨立容器供主流程呼叫。
+
 ---
 
 ## Phase 0: 專案初始化
@@ -558,7 +565,7 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "langchain>=0.3.0",
     "langchain-groq>=0.2.0",
-    "langgraph>=0.2.0",
+    "langgraph>=1.0.0",  # ✅ 使用 LangGraph 1.0
     "tavily-python>=0.5.0",
     "duckduckgo-search>=6.0.0",
     "python-dotenv>=1.0.0",
@@ -1095,21 +1102,23 @@ graph.add_conditional_edges(
 debate_graph = graph.compile()
 ```
 
-**⚠️ 重要說明：LangGraph 串流機制**
+**⚠️ 重要說明：LangGraph 1.0 串流機制**
 
-1. **為什麼 `invoke` 可以串流？**
-   - 當 LLM 設定 `streaming=True` 時，LangGraph 的 `astream_events` 會攔截所有 LLM 調用
-   - 即使節點內部使用 `invoke`，串流事件仍會被發出
-   - 這是 LangGraph 0.2+ 的內部機制
+1. **新的串流 API：**
+   - LangGraph 1.0 使用 `astream()` + `stream_mode="messages"` 取代舊的 `astream_events()`
+   - API 更簡潔直觀，不需要複雜的事件過濾
+   - 節點資訊直接從 metadata 的 `langgraph_node` 欄位獲取
 
 2. **關鍵配置：**
    - LLM 必須設定 `streaming=True`
-   - 使用 `astream_events(version="v2")` （v2 更穩定）
-   - 監聽 `on_chat_model_stream` 事件
+   - 使用 `async for message, metadata in graph.astream(state, stream_mode="messages")`
+   - 可使用多種 stream_mode: `"messages"`, `"values"`, `"updates"`, `"debug"`
+   - 支援多模式串流：`stream_mode=["messages", "updates"]`
 
-3. **替代方案（如需更精確控制）：**
-   - 使用 `llm.astream()` 並手動處理 async generator
-   - 但會讓節點函數變成 async，增加複雜度
+3. **工具調用監聽：**
+   - Token 串流使用 `stream_mode="messages"`
+   - 工具調用監聽使用 `stream_mode="updates"` 或組合使用
+   - 可以過濾特定節點：檢查 `metadata["langgraph_node"]`
 
 #### 2. 更新 `backend/app/main.py`
 
@@ -1167,61 +1176,28 @@ async def debate_stream(topic: str, max_rounds: int):
         "max_rounds": max_rounds
     }
 
-    # ⚠️ 使用 version="v2" 更穩定
-    async for event in debate_graph.astream_events(initial_state, version="v2"):
-        event_type = event.get("event")
-
+    # ✅ LangGraph 1.0：使用 astream() + stream_mode="messages"
+    async for message, metadata in debate_graph.astream(
+        initial_state,
+        stream_mode="messages"
+    ):
         # 監聽 LLM token 串流
-        if event_type == "on_chat_model_stream":
-            chunk = event.get("data", {}).get("chunk")
-            if chunk and hasattr(chunk, 'content') and chunk.content:
-                # v2 中節點資訊在 tags 中
-                tags = event.get("tags", [])
-                node = next((tag.split(":")[-1] for tag in tags if tag.startswith("seq:step:")), "unknown")
-
-                data = {
-                    "type": "token",
-                    "node": node,
-                    "text": chunk.content
-                }
-                yield f"data: {json.dumps(data)}\n\n"
-
-        # 監聽工具調用開始
-        elif event_type == "on_tool_start":
-            tool_name = event.get("name")
-            tool_input = event.get("data", {}).get("input", {})
+        if hasattr(message, 'content') and message.content:
+            # 從 metadata 獲取節點資訊
+            node = metadata.get("langgraph_node", "unknown")
 
             data = {
-                "type": "tool_start",
-                "tool": tool_name,
-                "input": tool_input
+                "type": "token",
+                "node": node,
+                "text": message.content
             }
             yield f"data: {json.dumps(data)}\n\n"
 
-        # 監聽工具調用完成
-        elif event_type == "on_tool_end":
-            tool_name = event.get("name")
-            tool_output = event.get("data", {}).get("output", "")
-
-            data = {
-                "type": "tool_end",
-                "tool": tool_name,
-                "output": tool_output[:200]  # 限制長度避免過大
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-
-        # 監聽節點完成
-        elif event_type == "on_chain_end":
-            tags = event.get("tags", [])
-            node_tag = next((tag for tag in tags if tag.startswith("seq:step:")), None)
-
-            if node_tag:
-                node = node_tag.split(":")[-1]
-                data = {
-                    "type": "node_end",
-                    "node": node
-                }
-                yield f"data: {json.dumps(data)}\n\n"
+    # ⚠️ 注意：工具調用事件需要使用額外的 stream_mode
+    # 如需監聽工具調用，使用 stream_mode=["messages", "updates"]
+    # 然後根據事件類型分別處理：
+    # - "messages" mode: 包含 LLM token
+    # - "updates" mode: 包含節點狀態更新（可檢測工具調用）
 
     # 發送完成事件
     yield f"data: {json.dumps({'type': 'complete'})}\n\n"
@@ -1256,11 +1232,11 @@ async def health():
     }
 ```
 
-**⚠️ 關鍵修正：**
+**⚠️ 關鍵修正（LangGraph 1.0）：**
 
-1. **改用 v2 API**：
-   - `astream_events(version="v2")` 更穩定
-   - 節點資訊從 `tags` 獲取，格式為 `seq:step:{node_name}`
+1. **使用新的串流 API**：
+   - 使用 `astream()` + `stream_mode="messages"` 取代 `astream_events()`
+   - 節點資訊從 `metadata["langgraph_node"]` 獲取，不再需要解析 tags
 
 2. **CORS 配置**：
    - 不支援 `*.pages.dev` 通配符
@@ -1699,8 +1675,8 @@ ENVIRONMENT=development
 #### 後端要點
 - 使用 `StreamingResponse` 搭配 async generator
 - 每個 chunk 必須是 `data: ...\n\n` 格式
-- 處理 `astream_events` 的不同事件類型
-- 使用 LangGraph 0.2+ 的最新 API
+- 處理 `astream_events` 的不同事件類型（v1 仍支援）
+- 使用 LangGraph v1 穩定 API（graph/state/node 模型未變）
 
 #### 前端要點
 - 使用 `fetch` + `ReadableStream` 而非 `EventSource`（因為需要 POST）
@@ -2027,7 +2003,7 @@ A: 確保 FastAPI 的 `allow_origins` 包含前端的實際 URL（本地和生�
 
 **關鍵成功因素:**
 1. ✅ 使用現代化工具鏈（uv）
-2. ✅ 採用最新 LangGraph 0.2+ API
+2. ✅ 採用 LangGraph v1 穩定 API
 3. ✅ 三層容錯的搜尋策略
 4. ✅ 冷啟動 UX 優化
 5. ✅ 嚴格遵守零成本策略
