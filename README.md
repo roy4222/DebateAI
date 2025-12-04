@@ -53,7 +53,7 @@
 | **後端 Framework** | **FastAPI** | • Python 3.11+<br>• 部署於 **Google Cloud Run** (Docker Container)<br>• 使用 **uv** 管理依賴<br>• 提供 SSE 串流接口（私有部署） |
 | **AI 框架** | **LangGraph 0.2+** | • 最新版本的 multi-agent 框架<br>• 使用 `astream_events` API<br>• 原生支援工具調用與串流 |
 | **LLM 核心** | **Groq** | • Llama-3.1-70b 模型<br>• 利用 Groq 的 LPU 提供每秒 300+ token 的超快推理<br>• 使用 streaming 模式實現打字機效果 |
-| **搜尋工具** | **Tavily + DuckDuckGo** | • **Tavily**：專為 AI 設計，極度穩定（1000 次/月免費）<br>• **DuckDuckGo**：備援方案，完全免費<br>• **三層容錯**：Tavily → DuckDuckGo → 優雅降級 |
+| **搜尋工具** | **Tavily + DuckDuckGo Text** | • **Tavily**：專為 AI 設計，伺服器端完成內容清洗（1000 次/月免費）<br>• **DuckDuckGo**：文字摘要搜尋，完全免費備援<br>• **三層容錯**：Tavily → DDGS Text → 優雅降級<br>• **回應速度**：< 1 秒，適合即時辯論<br>• **Phase 4 可選**：Playwright 深度爬取（獨立 Cloud Function） |
 | **通訊協定** | **HTTP + SSE** | • Phase 1: GET + EventSource (簡單測試)<br>• Phase 2+: POST + fetch + ReadableStream (完整功能) |
 
 ### 2.3 架構圖

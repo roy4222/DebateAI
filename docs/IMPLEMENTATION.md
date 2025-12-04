@@ -460,13 +460,38 @@ pip install uv
 
 **解決方案：** 三層容錯機制
 1. **主要策略**: 使用 Tavily（專為 AI 設計，極度穩定）
-2. **備援策略**: Tavily 失敗時自動切換到 DuckDuckGo
+2. **備援策略**: Tavily 失敗時自動切換到 DuckDuckGo Text Search
 3. **優雅降級**: 兩者都失敗時，基於已知知識回答（不會崩潰）
 
 **好處：**
 - Demo 永遠不會在面試官面前崩潰
 - Tavily 1000 次/月免費額度足夠展示
 - DuckDuckGo 作為無限次數備援
+
+**⚠️ 架構決策：為什麼不使用 Playwright 爬蟲？**
+
+**情境 A：即時辯論（本專案）**
+- **推薦組合**：LangGraph + Tavily API + DDGS Text Search
+- **理由**：
+  - Tavily 已在伺服器端完成爬取與內容清洗，回傳純文字摘要
+  - 回應速度 < 1 秒，適合「你來我往」的辯論節奏
+  - Cloud Run 部署簡單，記憶體需求低（512MB 足夠）
+  - 符合零成本策略
+- **適用場景**：90% 的辯論資訊補充需求
+
+**情境 B：深度研究（Phase 4 進階擴展）**
+- **推薦組合**：LangGraph + DDGS + Playwright 爬蟲
+- **理由**：
+  - 需要繞過付費牆、操作網頁互動、或爬取動態渲染的 SPA
+  - Tavily 無法覆蓋的冷門網站或特定內容
+  - 完全自主控制爬取邏輯與資料清洗
+- **部署要求**：
+  - **不適合** Cloud Run（容器啟動慢、記憶體不足）
+  - **推薦** Cloud Functions Gen2（2GB 記憶體）或獨立 VPS
+  - 需要額外配置 Chromium 依賴與系統庫
+- **適用場景**：特定的深度內容分析任務
+
+**本專案選擇**：採用情境 A（Tavily + DDGS），Phase 4 可選擇性加入情境 B 作為「深度查證」功能
 
 ### 3. Cloud Run 冷啟動優化
 
@@ -1829,10 +1854,11 @@ gcloud run services update debate-api --min-instances 1
 
 ---
 
-## 後續擴展功能（Week 4）
+## 後續擴展功能（Week 4+）
 
 根據測試結果，可選擇性加入：
 
+### 🟢 基礎擴展（推薦優先）
 1. **主題模板庫**: 預設 10 個熱門辯論主題
 2. **對話歷史**: 使用 localStorage 儲存過往辯論
 3. **Moderator 總結**: 第三個 agent 生成辯論總結
@@ -1841,6 +1867,118 @@ gcloud run services update debate-api --min-instances 1
 6. **深色模式**: UI 主題切換
 7. **回合進度條**: 顯示當前辯論進度
 8. **Export 功能**: 導出辯論記錄為 Markdown 或 PDF
+
+### 🔵 進階擴展（需額外架構調整）
+
+#### 9. **深度網頁爬取功能（Playwright Integration）**
+
+**使用場景**：
+- 分析特定長文報告（如學術論文、政府白皮書）
+- 繞過需要 JavaScript 渲染的動態網站
+- 爬取 Tavily 無法覆蓋的特殊內容
+
+**架構設計**：
+```
+前端 (Cloudflare Pages)
+    ↓
+主 API (Cloud Run - 512MB)          ← 負責辯論 + Tavily 搜尋
+    ↓
+爬蟲服務 (Cloud Functions Gen2 - 2GB) ← 負責 Playwright 爬取
+```
+
+**部署步驟**：
+
+1. **創建獨立的爬蟲服務**：
+```bash
+# 新建目錄
+mkdir scraper-service
+cd scraper-service
+
+# pyproject.toml
+[project]
+dependencies = [
+    "playwright>=1.40.0",
+    "beautifulsoup4>=4.12.0",
+    "functions-framework>=3.0.0"
+]
+
+# main.py
+import functions_framework
+from playwright.async_api import async_playwright
+
+@functions_framework.http
+async def scrape_webpage(request):
+    url = request.json.get('url')
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        page = await browser.new_page()
+        await page.goto(url)
+        content = await page.content()
+        await browser.close()
+        # 清洗內容...
+        return {'text': cleaned_text}
+```
+
+2. **部署到 Cloud Functions**：
+```bash
+gcloud functions deploy playwright-scraper \
+  --gen2 \
+  --runtime python311 \
+  --memory 2048MB \
+  --timeout 60s \
+  --trigger-http \
+  --allow-unauthenticated \
+  --region asia-east1
+```
+
+3. **主 API 調用爬蟲服務**：
+```python
+# backend/app/tools.py
+import httpx
+
+async def deep_scrape(url: str) -> str:
+    """深度爬取特定網頁（非同步調用）"""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://asia-east1-xxx.cloudfunctions.net/playwright-scraper",
+            json={"url": url},
+            timeout=60.0
+        )
+        return response.json()['text']
+
+# 在 web_search 中選擇性使用
+async def web_search(query: str, deep_mode: bool = False) -> dict:
+    # 第一層：Tavily（快速摘要）
+    results = await tavily_search(query)
+
+    # 如果使用者要求深度模式，且找到特定網址
+    if deep_mode and results:
+        top_url = results[0]['url']
+        detailed_content = await deep_scrape(top_url)
+        results[0]['detailed_content'] = detailed_content
+
+    return results
+```
+
+**成本估算**：
+- Cloud Functions Gen2（2GB）每月免費 200 萬次請求
+- Playwright 啟動約 3-5 秒，單次爬取約 $0.0001
+- 建議：只在使用者明確要求「深度分析」時啟用
+
+**優點**：
+- ✅ 不影響主 API 的輕量與速度
+- ✅ 爬蟲失敗不會拖垮整個系統
+- ✅ 可獨立擴展記憶體與超時設定
+
+**缺點**：
+- ⚠️ 增加架構複雜度
+- ⚠️ 需要維護兩個服務
+- ⚠️ 網路延遲（主 API ↔ 爬蟲服務）
+
+**建議時機**：
+- 在 Phase 1-3 完成後
+- 當基礎辯論功能穩定運行
+- 當你需要展示「深度研究能力」作為差異化功能
 
 ---
 
