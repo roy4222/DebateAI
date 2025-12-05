@@ -1,139 +1,150 @@
-# 📅 開發日記：DebateAI - Phase 1 基礎架構與部署
+# 📅 開發日記：DebateAI - Phase 1 & 2
 
 **日期**：2025-12-05  
-**狀態**：✅ Phase 1 完成 (部署成功)  
-**心情**：從 WSL 幽靈路徑的地獄爬出來，最後看到雲端上文字在跑的那一刻，爽！
+**狀態**：✅ Phase 2 完成 (真實 AI 辯論上線)  
+**心情**：從 fake 模板到真正的 AI 辯論，看到 Groq 串流飆出來那一刻，爽上加爽！
 
 ---
 
-## � 今日成就 (Highlights)
+## 🎉 今日成就 (Highlights)
 
-### 1. 解決 WSL 環境靈異事件
+### Phase 1 回顧（早上完成）
 
-- 遭遇了 `Failed to translate path` 和 `WSL phantom state` 問題。
-- **原因**：VS Code 殘留了舊的 WSL Session，且專案原本建在 Windows 檔案系統導致權限與路徑錯亂。
-- **解法**：在 WSL 家目錄 (`~`) 重建專案，並強制重啟 VS Code 視窗，讓終端機回歸正軌。
+- 解決 WSL 環境靈異事件
+- 後端開發 (FastAPI + uv + Regex CORS + Fake SSE)
+- 前端開發 (Next.js + shadcn/ui + 串流優化)
+- 雲端部署 (Cloud Run + Cloudflare Pages)
 
-### 2. 後端開發 (FastAPI + uv)
+### Phase 2 新增（晚上完成）
 
-- 完成 `main.py` 基礎架構。
-- **Regex CORS**：解決了 Cloudflare Pages 動態子網域 (`*.pages.dev`) 的跨域問題。
-- **Fake SSE**：實作了模擬打字機效果的串流接口，並加上 `X-Accel-Buffering: no` 防止 Nginx/Cloudflare 搞事。
-- **Docker 封裝**：寫好了 `Dockerfile`，使用 `uv` 進行極速依賴安裝。
+#### 1. 後端 LLM 整合
 
-### 3. 前端開發 (Next.js + shadcn/ui)
+- **graph.py**：狀態管理模組
+  - `DebateState` TypedDict 定義
+  - `build_prompt()` 生成 Agent 專屬 Prompt
+  - `update_state_after_speaker()` 狀態更新邏輯
+- **main.py**：真正的 Token-Level 串流
+  - 直接呼叫 `llm.astream()` 實現逐字輸出
+  - `sse_event()` 輔助函數確保正確的 `\n\n` 格式
+  - 錯誤處理與 fallback 機制
 
-- **Cyberpunk UI**：引入 `shadcn/ui`，並魔改成 Emerald (樂觀) vs Rose (懷疑) 的對抗視覺風格。
-- **串流優化**：捨棄 `EventSource`，改用 `fetch` + `ReadableStream` 支援 POST 請求。
-- **State Management**：使用 `useRef` 建立 Buffer，解決了 React 在高速串流下 `useState` 不同步導致掉字的問題。
-- **DebateUI 修正**：
-  - 30 秒超時改為僅監控連線階段（首包後解除）
-  - 連線時間在首包到達時記錄（而非整場結束後）
-  - 停止時清空所有 buffer（避免殘留 UI 氣泡）
+#### 2. 依賴更新
 
-### 4. 雲端部署 (The Big Win)
+```toml
+# pyproject.toml 新增
+langchain>=0.3.0
+langchain-groq>=0.2.0
+langgraph>=1.0.0
+```
 
-#### Google Cloud Run (後端)
+#### 3. 環境變數
 
-- 克服了 `uv` Buildpack 不支援的問題，改用 `gcloud builds submit` 先打包 Image 再部署。
-- 設定了預算警告 ($5/mo) 與 `max-instances: 3` 防止破產。
-- 成功解決 GCP 權限 (`Storage Admin`) 與 Billing 連結問題。
-
-#### Cloudflare Pages (前端)
-
-- 設定 `output: 'export'` 進行靜態導出。
-- 使用 Wrangler CLI 一鍵上傳，成功與後端連線。
-- 綁定自訂網域 `debateai.roy422.ggff.net`。
+| 變數              | 用途                            |
+| ----------------- | ------------------------------- |
+| `GROQ_API_KEY`    | Groq API 金鑰                   |
+| `GROQ_MODEL`      | 模型選擇 (llama-3.1-8b-instant) |
+| `USE_FAKE_STREAM` | 強制使用假資料 (測試用)         |
 
 ---
 
 ## 🐛 遇到的坑與解決方案 (Troubleshooting)
 
-| 問題                      | 原因                                                 | 解決方案                                                           |
-| :------------------------ | :--------------------------------------------------- | :----------------------------------------------------------------- |
-| **WSL 找不到檔案**        | 專案建在 Windows 目錄且 WSL 重啟後路徑失效           | 在 WSL `~` 目錄重建專案，使用 `code .` 重新連線                    |
-| **`uv sync` 失敗**        | hatchling 找不到套件目錄                             | 添加 `[tool.hatch.build.targets.wheel]` 到 pyproject.toml          |
-| **Docker Build 失敗**     | `pyproject.toml` 參照了 README 但 Dockerfile 沒 COPY | 修改 Dockerfile 加入 `COPY README.md ./`                           |
-| **GCP Permission Denied** | Cloud Build 機器人沒有讀取 Storage 的權限            | `gcloud projects add-iam-policy-binding` 賦予 `storage.admin`      |
-| **Cloud Run 部署失敗**    | `uv` 環境不被 Google Buildpacks 支援                 | 放棄 `--source .`，改用 `gcloud builds submit` 強制使用 Dockerfile |
-| **自訂網域 CORS 失敗**    | 只允許 `*.pages.dev`                                 | 添加 `*.ggff.net` 到 CORS regex                                    |
+| 問題                          | 原因                                                        | 解決方案                                                     |
+| ----------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------ |
+| **前端收不到 SSE 事件**       | 後端使用 `\\n\\n` 輸出字面字串而非換行符                    | 建立 `sse_event()` 輔助函數確保正確的 `\n\n`                 |
+| **LangGraph 無法 token 串流** | `astream(stream_mode="messages")` 只在訊息加入 state 時串流 | 放棄 LangGraph 控制流，改為 main.py 直接呼叫 `llm.astream()` |
+| **回合數顯示 0**              | `round_count` 在發送 speaker 事件後才遞增                   | 計算時使用 `round_count + 1`                                 |
 
 ---
 
-## 📊 部署資訊
+## 📊 生產環境狀態
 
-| 服務 | 平台             | URL                                                 |
-| ---- | ---------------- | --------------------------------------------------- |
-| 前端 | Cloudflare Pages | https://debateai.roy422.ggff.net                    |
-| 後端 | Cloud Run        | https://debate-api-1046434677262.asia-east1.run.app |
+```bash
+curl https://debate-api-1046434677262.asia-east1.run.app/health
+```
 
-**GCP 配置**：
-
-- Project ID: `debateai-480308`
-- Region: `asia-east1`（台灣）
-- 記憶體: 512Mi
-- 最大實例數: 3
+```json
+{
+  "status": "healthy",
+  "version": "0.2.0",
+  "phase": 2,
+  "has_groq_key": true,
+  "use_fake_stream": false,
+  "model": "llama-3.1-8b-instant"
+}
+```
 
 ---
 
 ## 📸 里程碑
 
-- ✅ 本地 `localhost:3000` 串流成功
-- ✅ Cloud Run Health Check `{"status":"healthy"}`
-- ✅ 正式網址運作正常，冷啟動提示顯示正確
+- ✅ Phase 1 完成：Fake SSE 串流 + 雲端部署
+- ✅ Phase 2 完成：真實 AI 辯論
+  - Groq API 整合
+  - Token-level 串流（打字機效果）
+  - Optimist vs Skeptic 雙 Agent 交替
 
 ---
 
-# � 明日待辦 (Tomorrow's To-Do): Phase 2 注入靈魂
+## 🔮 明日待辦：Bug 修復 & Phase 3
 
-目前的辯論內容是寫死的 (Fake Data)，明天要讓它接上真的大腦。
+### 🐛 待修復 Bug
 
-## 1. LLM 整合 (The Brain)
+- [ ] **輸入的問題沒有保留在網頁上**：辯論開始後，用戶輸入的主題沒有顯示在頁面上方
+- [ ] **輸入框沒有清空**：點擊「開始辯論」後，輸入框應該被清空
 
-- [ ] 申請 **Groq API Key** (速度快、免費額度夠)
-- [ ] 在後端安裝 `langchain-groq` 與 `langgraph`
-- [ ] 設定 `.env` 加入 `GROQ_API_KEY`
+### Phase 3 聯網搜尋
 
-## 2. LangGraph 邏輯實作 (The Logic)
+### 1. 工具整合
 
-- [ ] 建立 `backend/app/graph.py`
-- [ ] 定義 **State** (儲存對話歷史)
-- [ ] 實作 **Optimist Node** (樂觀者 Prompt)
-- [ ] 實作 **Skeptic Node** (懷疑者 Prompt)
-- [ ] 設定 Graph 流程：Start -> Optimist -> Skeptic -> End
+- [ ] 安裝 `tavily-python` 或 `duckduckgo-search`
+- [ ] 建立 `search_tool` 函數
+- [ ] 在 Agent Prompt 中加入工具使用指引
 
-## 3. API 串接 (The Connection)
+### 2. LangGraph 重新引入
 
-- [ ] 修改 `main.py`，將 `fake_debate_stream` 替換為 `graph.astream_events`
-- [ ] 調整 SSE 輸出格式，確保與前端 `handleSSEEvent` 相容
+- [ ] 使用 LangGraph 管理工具調用流程
+- [ ] 實作 `tool_node` 處理搜尋結果
+- [ ] 串流搜尋進度到前端
 
-## 4. 部署更新 (Update)
+### 3. 前端優化
 
-- [ ] 使用 `gcloud run services update` 更新後端環境變數 (加入 API Key)
-- [ ] 重新 `gcloud builds submit` 並部署新版後端
+- [ ] 顯示搜尋中狀態
+- [ ] 展示引用來源連結
 
 ---
 
 ## 💡 技術筆記
 
-### shadcn/ui + Tailwind CSS 4
+### SSE 格式注意事項
 
-- Tailwind CSS 4 使用 `@import "tailwindcss"` 語法
-- shadcn/ui 需要手動添加 CSS 變數到 `:root`
-- 使用 `@layer base` 設定全域樣式
+```python
+# ❌ 錯誤：\\n\\n 會輸出字面反斜線
+yield f"data: {json.dumps(data)}\\n\\n"
 
-### Cloud Run + Cloudflare 跨域
+# ✅ 正確：使用輔助函數
+def sse_event(data: dict) -> str:
+    return f"data: {json.dumps(data)}\n\n"
+```
 
-- Cloud Run SSE 需要設定 `X-Accel-Buffering: no` 防止緩衝
-- CORS 需要明確返回 `Access-Control-Allow-Origin`
-- 自訂網域需要額外添加到 CORS 允許列表
+### Groq 串流 API
 
-### React 高頻串流狀態管理
+```python
+from langchain_groq import ChatGroq
 
-- `useState` 在高頻更新時會有非同步問題
-- 使用 `useRef` 建立 buffer 追蹤即時文字
-- 定期同步 ref 到 state 觸發 UI 渲染
+llm = ChatGroq(model="llama-3.1-8b-instant", streaming=True)
+
+async for chunk in llm.astream(messages):
+    if chunk.content:
+        yield sse_event({'type': 'token', 'text': chunk.content})
+```
+
+### LangGraph 限制
+
+`astream(stream_mode="messages")` 只會在訊息 **加入 state** 時觸發串流。如果節點內部使用 `llm.astream()`，tokens 不會被攔截。
+
+**解法**：在節點外部直接控制 LLM 串流，LangGraph 只用於狀態管理。
 
 ---
 
-**備註**：Phase 3 (聯網搜尋) 和 Phase 4 (Playwright 深度爬蟲) 先暫緩，先把 AI 辯論的邏輯跑通最重要。明天見！
+**備註**：Phase 2 比想像中複雜，SSE 格式和 LangGraph 串流都踩了坑。但最後成功了！明天繼續 Phase 3！
