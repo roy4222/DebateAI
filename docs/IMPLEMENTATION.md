@@ -29,10 +29,10 @@
 | 套件                       | 版本   | 用途                                       |
 | -------------------------- | ------ | ------------------------------------------ |
 | `shadcn/ui`                | -      | 基礎 UI 組件（Button, Input, Card, Badge） |
-| `class-variance-authority` | ^0.7   | 組件 variants 管理                         |
+| `class-variance-authority` | ^0.7.1 | 組件 variants 管理                         |
 | `clsx` + `tailwind-merge`  | -      | 類別名稱合併                               |
-| `lucide-react`             | ^0.460 | 圖示庫（Swords, Rocket, Square）           |
-| `@radix-ui/react-slot`     | ^1.2   | 組件組合                                   |
+| `lucide-react`             | ^0.555 | 圖示庫（Swords, Rocket, Square）           |
+| `@radix-ui/react-slot`     | ^1.2.4 | 組件組合                                   |
 
 ### 安裝步驟
 
