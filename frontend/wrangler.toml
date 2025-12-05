@@ -2,5 +2,8 @@ name = "debate-ai"
 pages_build_output_dir = "out"
 
 # 環境變數（Production）
+# 注意：部署後可透過以下網址存取：
+# - Pages 預設：https://debate-ai.pages.dev
+# - 自訂網域：https://debateai.roy422.ggff.net
 [vars]
 NEXT_PUBLIC_API_URL = "https://debate-api-1046434677262.asia-east1.run.app"

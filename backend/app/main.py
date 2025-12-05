@@ -13,24 +13,37 @@ app = FastAPI(title="DebateAI API", version="0.1.0")
 # ✅ Regex CORS Middleware - 支援 Cloudflare Pages 動態域名
 # ============================================================
 class RegexCORSMiddleware(CORSMiddleware):
-    """支援 regex 匹配的 CORS Middleware"""
+    """
+    支援 regex 匹配的 CORS Middleware
+    
+    ⚠️ 安全設計：
+    - 不支援 ALLOWED_ORIGINS="*" + credentials（此組合有安全風險）
+    - 只允許明確的域名模式匹配
+    """
     def is_allowed_origin(self, origin: str) -> bool:
+        if not origin:
+            return False
+            
         # 允許 localhost 開發環境
-        if origin and origin.startswith("http://localhost"):
+        if origin.startswith("http://localhost"):
             return True
+            
         # 允許所有 .pages.dev 結尾的域名（Cloudflare Pages）
-        if origin and re.match(r"https://.*\.pages\.dev$", origin):
+        if re.match(r"https://.*\.pages\.dev$", origin):
             return True
+            
         # 允許自訂網域 .ggff.net
-        if origin and re.match(r"https://.*\.ggff\.net$", origin):
+        if re.match(r"https://.*\.ggff\.net$", origin):
             return True
-        # 允許自定義域名（從環境變數讀取）
+            
+        # 允許額外的明確網域（從環境變數讀取，逗號分隔）
+        # ⚠️ 不支援萬用字元 "*"，必須是完整網址
         allowed = os.getenv("ALLOWED_ORIGINS", "")
-        # 支援萬用字元 *
-        if allowed == "*":
-            return True
-        if origin in allowed.split(","):
-            return True
+        if allowed and allowed != "*":
+            allowed_list = [o.strip() for o in allowed.split(",") if o.strip()]
+            if origin in allowed_list:
+                return True
+                
         return super().is_allowed_origin(origin)
 
 app.add_middleware(
