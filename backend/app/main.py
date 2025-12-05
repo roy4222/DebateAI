@@ -21,9 +21,15 @@ class RegexCORSMiddleware(CORSMiddleware):
         # 允許所有 .pages.dev 結尾的域名（Cloudflare Pages）
         if origin and re.match(r"https://.*\.pages\.dev$", origin):
             return True
+        # 允許自訂網域 .ggff.net
+        if origin and re.match(r"https://.*\.ggff\.net$", origin):
+            return True
         # 允許自定義域名（從環境變數讀取）
-        allowed = os.getenv("ALLOWED_ORIGINS", "").split(",")
-        if origin in allowed:
+        allowed = os.getenv("ALLOWED_ORIGINS", "")
+        # 支援萬用字元 *
+        if allowed == "*":
+            return True
+        if origin in allowed.split(","):
             return True
         return super().is_allowed_origin(origin)
 

@@ -1,0 +1,6 @@
+name = "debate-ai"
+pages_build_output_dir = "out"
+
+# 環境變數（Production）
+[vars]
+NEXT_PUBLIC_API_URL = "https://debate-api-1046434677262.asia-east1.run.app"
