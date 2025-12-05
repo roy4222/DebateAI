@@ -1,58 +1,68 @@
+"""
+DebateAI Backend - FastAPI 應用
+
+Phase 2: 真正的 Token-Level 串流
+- main.py 直接控制 LLM 串流
+- graph.py 只負責狀態管理與 prompt 生成
+
+⚠️ 注意：目前未使用 LangGraph StateGraph，僅用其作為依賴（ChatGroq）
+   未來 Phase 3 可能重新引入 LangGraph 進行更複雜的工具調用流程
+"""
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from dotenv import load_dotenv
 import asyncio
 import json
 import re
 import os
 
-app = FastAPI(title="DebateAI API", version="0.1.0")
+# 載入環境變數
+load_dotenv()
+
+app = FastAPI(title="DebateAI API", version="0.2.0")
+
 
 # ============================================================
-# ✅ Regex CORS Middleware - 支援 Cloudflare Pages 動態域名
+# 環境變數
+# ============================================================
+USE_FAKE_STREAM = os.getenv("USE_FAKE_STREAM", "false").lower() == "true"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+HAS_GROQ_KEY = bool(GROQ_API_KEY and len(GROQ_API_KEY) > 10)
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+
+
+# ============================================================
+# Regex CORS Middleware
 # ============================================================
 class RegexCORSMiddleware(CORSMiddleware):
-    """
-    支援 regex 匹配的 CORS Middleware
-    
-    ⚠️ 安全設計：
-    - 不支援 ALLOWED_ORIGINS="*" + credentials（此組合有安全風險）
-    - 只允許明確的域名模式匹配
-    """
+    """支援 regex 匹配的 CORS Middleware"""
     def is_allowed_origin(self, origin: str) -> bool:
         if not origin:
             return False
-            
-        # 允許 localhost 開發環境
         if origin.startswith("http://localhost"):
             return True
-            
-        # 允許所有 .pages.dev 結尾的域名（Cloudflare Pages）
         if re.match(r"https://.*\.pages\.dev$", origin):
             return True
-            
-        # 允許自訂網域 .ggff.net
         if re.match(r"https://.*\.ggff\.net$", origin):
             return True
-            
-        # 允許額外的明確網域（從環境變數讀取，逗號分隔）
-        # ⚠️ 不支援萬用字元 "*"，必須是完整網址
         allowed = os.getenv("ALLOWED_ORIGINS", "")
         if allowed and allowed != "*":
             allowed_list = [o.strip() for o in allowed.split(",") if o.strip()]
             if origin in allowed_list:
                 return True
-                
         return super().is_allowed_origin(origin)
 
 app.add_middleware(
     RegexCORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # 基本白名單
+    allow_origins=["http://localhost:3000"],
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
     allow_credentials=True,
 )
+
 
 # ============================================================
 # 請求模型
@@ -61,83 +71,134 @@ class DebateRequest(BaseModel):
     topic: str
     max_rounds: int = 3
 
+
 # ============================================================
-# Fake SSE 串流生成器（Phase 1 測試用）
+# SSE 輔助函數
+# ============================================================
+def sse_event(data: dict) -> str:
+    """生成 SSE 事件格式"""
+    return f"data: {json.dumps(data)}\n\n"
+
+
+# ============================================================
+# Fake SSE 串流（Fallback）
 # ============================================================
 async def fake_debate_stream(topic: str, max_rounds: int = 3):
-    """
-    Phase 1 測試：模擬 AI 辯論的 SSE 串流
+    """Phase 1 測試用：模擬 AI 辯論"""
     
-    事件類型：
-    - status: 狀態更新
-    - speaker: 發言者開始
-    - token: 逐字輸出
-    - speaker_end: 發言者結束
-    - complete: 辯論完成
-    """
-    
-    # 狀態：引擎啟動
-    yield f"data: {json.dumps({'type': 'status', 'text': '⚡ 正在喚醒 AI 辯論引擎...'})}\n\n"
-    await asyncio.sleep(0.5)
-    
-    yield f"data: {json.dumps({'type': 'status', 'text': '🔥 引擎已就緒，開始辯論！'})}\n\n"
+    yield sse_event({'type': 'status', 'text': '⚡ [FAKE MODE] 正在喚醒模擬引擎...'})
     await asyncio.sleep(0.3)
     
-    # 模擬辯論回合
-    for round_num in range(1, max_rounds + 1):
-        # ========== 樂觀者發言 ==========
-        yield f"data: {json.dumps({'type': 'speaker', 'node': 'optimist', 'text': f'第 {round_num} 輪'})}\n\n"
-        await asyncio.sleep(0.2)
-        
-        optimist_text = f"關於「{topic}」，我認為這是一個充滿機會的領域。科技的進步總是帶來新的可能性，我們應該以開放的心態擁抱變革。"
-        if round_num > 1:
-            optimist_text = f"針對懷疑者的觀點，我必須指出：每一次技術革命都曾引發類似的擔憂，但最終人類都成功適應並創造了更美好的未來。「{topic}」也不例外！"
-        
-        for char in optimist_text:
-            yield f"data: {json.dumps({'type': 'token', 'node': 'optimist', 'text': char})}\n\n"
-            await asyncio.sleep(0.03)  # 30ms 打字機效果
-        
-        yield f"data: {json.dumps({'type': 'speaker_end', 'node': 'optimist'})}\n\n"
-        await asyncio.sleep(0.5)
-        
-        # ========== 懷疑者發言 ==========
-        yield f"data: {json.dumps({'type': 'speaker', 'node': 'skeptic', 'text': f'第 {round_num} 輪'})}\n\n"
-        await asyncio.sleep(0.2)
-        
-        skeptic_text = f"然而，我們必須謹慎看待「{topic}」。過度樂觀可能導致我們忽視潛在的風險與挑戰。歷史告訴我們，盲目的技術崇拜往往帶來意想不到的後果。"
-        if round_num > 1:
-            skeptic_text = f"樂觀者忽略了一個關鍵事實：這次的變革速度和規模是前所未有的。「{topic}」的影響可能比我們預期的更加深遠，我們需要更多的監管和準備。"
-        
-        for char in skeptic_text:
-            yield f"data: {json.dumps({'type': 'token', 'node': 'skeptic', 'text': char})}\n\n"
-            await asyncio.sleep(0.03)
-        
-        yield f"data: {json.dumps({'type': 'speaker_end', 'node': 'skeptic'})}\n\n"
-        await asyncio.sleep(0.5)
+    yield sse_event({'type': 'status', 'text': '🔥 模擬引擎已就緒！'})
     
-    # 辯論完成
-    yield f"data: {json.dumps({'type': 'complete', 'text': f'✅ 辯論結束！共進行了 {max_rounds} 輪精彩交鋒。'})}\n\n"
+    for round_num in range(1, max_rounds + 1):
+        # Optimist
+        yield sse_event({'type': 'speaker', 'node': 'optimist', 'text': f'第 {round_num} 輪'})
+        
+        optimist_text = f"關於「{topic}」，我認為這是充滿機會的！科技進步總是帶來新的可能性。"
+        for char in optimist_text:
+            yield sse_event({'type': 'token', 'node': 'optimist', 'text': char})
+            await asyncio.sleep(0.02)
+        
+        yield sse_event({'type': 'speaker_end', 'node': 'optimist'})
+        
+        # Skeptic
+        yield sse_event({'type': 'speaker', 'node': 'skeptic', 'text': f'第 {round_num} 輪'})
+        
+        skeptic_text = f"然而，我們必須謹慎看待「{topic}」。盲目樂觀可能導致忽視風險。"
+        for char in skeptic_text:
+            yield sse_event({'type': 'token', 'node': 'skeptic', 'text': char})
+            await asyncio.sleep(0.02)
+        
+        yield sse_event({'type': 'speaker_end', 'node': 'skeptic'})
+    
+    yield sse_event({'type': 'complete', 'text': f'✅ [FAKE] 辯論結束！共 {max_rounds} 輪。'})
+
+
+# ============================================================
+# 真實 LLM 串流
+# ============================================================
+async def real_debate_stream(topic: str, max_rounds: int = 3):
+    """Phase 2: 真正的 Token-Level 串流"""
+    from app.graph import (
+        get_llm, 
+        create_initial_state, 
+        build_prompt, 
+        update_state_after_speaker
+    )
+    
+    yield sse_event({'type': 'status', 'text': '⚡ 正在喚醒 AI 辯論引擎...'})
+    
+    # 初始化
+    state = create_initial_state(topic, max_rounds)
+    
+    try:
+        llm = get_llm()
+        yield sse_event({'type': 'status', 'text': f'🔥 使用模型: {GROQ_MODEL}'})
+    except Exception as e:
+        yield sse_event({'type': 'error', 'text': f'LLM 初始化失敗: {str(e)}'})
+        return
+    
+    # 辯論循環
+    while state['current_speaker'] != 'end':
+        speaker = state['current_speaker']
+        round_num = state['round_count'] + 1
+        
+        # 發送 speaker 開始事件
+        yield sse_event({'type': 'speaker', 'node': speaker, 'text': f'第 {round_num} 輪'})
+        
+        # 建構 prompt
+        messages = build_prompt(state, speaker)
+        
+        # 直接呼叫 llm.astream() 實現 token 串流
+        full_content = ""
+        try:
+            async for chunk in llm.astream(messages):
+                if chunk.content:
+                    full_content += chunk.content
+                    yield sse_event({'type': 'token', 'node': speaker, 'text': chunk.content})
+        except Exception as e:
+            yield sse_event({'type': 'error', 'text': f'LLM 串流中斷: {str(e)}'})
+            yield sse_event({'type': 'speaker_end', 'node': speaker})
+            yield sse_event({'type': 'complete', 'text': '❌ 辯論因錯誤而中斷'})
+            return
+        
+        # 發送 speaker 結束事件
+        yield sse_event({'type': 'speaker_end', 'node': speaker})
+        
+        # 更新狀態
+        if full_content:
+            state = update_state_after_speaker(state, speaker, full_content)
+        else:
+            yield sse_event({'type': 'error', 'text': 'LLM 返回空回應'})
+            break
+    
+    rounds_completed = state['round_count']
+    yield sse_event({'type': 'complete', 'text': f'✅ 辯論完成！共進行了 {rounds_completed} 輪精彩交鋒。'})
+
 
 # ============================================================
 # SSE 串流接口
 # ============================================================
 @app.post("/debate")
 async def start_debate(req: DebateRequest):
-    """
-    啟動 AI 辯論串流
+    """啟動 AI 辯論串流"""
     
-    - 使用 POST 方法（支援請求體）
-    - 返回 SSE 格式的串流響應
-    """
+    if USE_FAKE_STREAM or not HAS_GROQ_KEY:
+        stream_generator = fake_debate_stream(req.topic, req.max_rounds)
+    else:
+        stream_generator = real_debate_stream(req.topic, req.max_rounds)
+    
     return StreamingResponse(
-        fake_debate_stream(req.topic, req.max_rounds),
+        stream_generator,
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # ⚠️ 關鍵：防止 Cloudflare/Nginx 緩衝
+            "X-Accel-Buffering": "no",
         }
     )
+
 
 # ============================================================
 # 基礎接口
@@ -146,15 +207,20 @@ async def start_debate(req: DebateRequest):
 async def root():
     return {
         "message": "Welcome to DebateAI API 🎭",
-        "version": "0.1.0",
-        "phase": 1,
+        "version": "0.2.0",
+        "phase": 2,
         "docs": "/docs"
     }
+
 
 @app.get("/health")
 async def health():
     return {
         "status": "healthy",
-        "message": "DebateAI API is running",
-        "phase": 1
+        "version": "0.2.0",
+        "phase": 2,
+        "has_groq_key": HAS_GROQ_KEY,
+        "use_fake_stream": USE_FAKE_STREAM,
+        "model": GROQ_MODEL if HAS_GROQ_KEY else None,
+        "note": "LangGraph dependency present but not yet used for state management"
     }
