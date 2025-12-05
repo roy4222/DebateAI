@@ -107,13 +107,29 @@ frontend/
 
 ## 專案現狀
 
-- **狀態**: Phase 1 前端完成，後端 Fake SSE 完成
+> **最後更新**: 2025-12-05
+
+- **狀態**: ✅ Phase 1 完成，已部署到生產環境
 - **已完成**:
   - ✅ 前端 Next.js 16 + shadcn/ui 組件整合
   - ✅ 後端 FastAPI + Fake SSE 串流
-  - ✅ CORS 配置（Regex 支援 Cloudflare Pages）
-  - ✅ 靜態導出配置（Cloudflare Pages）
+  - ✅ CORS 配置（支援 `*.pages.dev` + `*.ggff.net`）
+  - ✅ 部署到 Cloud Run + Cloudflare Pages
 - **進行中**: Phase 2 - 接入 LangGraph 與 Groq
+
+### 🌐 生產環境 URL
+
+| 服務 | 平台             | URL                                                 |
+| ---- | ---------------- | --------------------------------------------------- |
+| 前端 | Cloudflare Pages | https://debateai.roy422.ggff.net                    |
+| 後端 | Cloud Run        | https://debate-api-1046434677262.asia-east1.run.app |
+
+### 📦 部署配置
+
+- **GCP Project ID**: `debateai-480308`
+- **Region**: `asia-east1`（台灣）
+- **記憶體**: 512Mi
+- **最大實例數**: 3
 
 ---
 
