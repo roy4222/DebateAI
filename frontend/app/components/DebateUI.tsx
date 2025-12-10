@@ -34,6 +34,7 @@ export function DebateUI() {
   // 狀態管理
   // ============================================================
   const [topic, setTopic] = useState("AI 會取代大部分人類工作嗎？");
+  const [currentTopic, setCurrentTopic] = useState<string>(""); // 保存當前辯論主題
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentText, setCurrentText] = useState<{ [key: string]: string }>({});
   const [currentRound, setCurrentRound] = useState<{ [key: string]: string }>(
@@ -149,6 +150,11 @@ export function DebateUI() {
   // 開始辯論
   // ============================================================
   const startDebate = async () => {
+    // 保存主題並清空輸入框
+    const debateTopic = topic.trim();
+    setCurrentTopic(debateTopic);
+    setTopic(""); // 清空輸入框
+
     // 重置狀態
     setIsStreaming(true);
     setMessages([]);
@@ -174,7 +180,7 @@ export function DebateUI() {
 
     try {
       await streamDebate(
-        { topic, max_rounds: 3 },
+        { topic: debateTopic, max_rounds: 3 },
         handleSSEEvent,
         abortControllerRef.current.signal
       );
@@ -251,7 +257,7 @@ export function DebateUI() {
       <main className="flex-1 overflow-y-auto px-6 py-6">
         <div className="max-w-4xl mx-auto space-y-4">
           {/* 歡迎訊息 */}
-          {messages.length === 0 && !isStreaming && (
+          {messages.length === 0 && !isStreaming && !currentTopic && (
             <Card className="max-w-lg mx-auto text-center border-slate-700/50">
               <CardHeader className="pt-10 pb-8">
                 <div className="text-6xl mb-4">🎭</div>
@@ -264,6 +270,18 @@ export function DebateUI() {
                 </CardDescription>
               </CardHeader>
             </Card>
+          )}
+
+          {/* 辯論主題顯示 */}
+          {currentTopic && (
+            <div className="mb-6 text-center">
+              <Badge
+                variant="outline"
+                className="px-4 py-2 text-base border-purple-500/50 bg-purple-500/10"
+              >
+                🎯 辯論主題：{currentTopic}
+              </Badge>
+            </div>
           )}
 
           {/* 已完成的訊息 */}
