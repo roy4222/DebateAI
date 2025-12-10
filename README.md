@@ -763,12 +763,157 @@ npm install
 
 **總計**：約 1 個月完成 MVP + 進階功能
 
-### 7.6 下一步行動
+### 7.6 進階功能規劃（Phase 4+）
 
-1. ⭐ **熟悉技術棧**：閱讀 LangGraph、FastAPI、Next.js 文檔
-2. 🔑 **申請 API Keys**：Groq、Tavily
-3. ☁️ **設定雲端帳號**：Google Cloud、Cloudflare
-4. 📖 **閱讀 IMPLEMENTATION.md**：開始實施 Phase 0
+#### 🎯 觀賞性增強（Entertainment Features）
+
+##### 1. 戰況拉鋸條（Tug-of-War Bar）
+- **目標**：視覺化辯論評分動態
+- **實現**：CSS 動畫 + Moderator 每輪評分
+- **技術**：無需新依賴，使用 Tailwind CSS keyframes
+
+```css
+@keyframes tugOfWar {
+  from { width: 50%; }
+  to { width: var(--score-width); }
+}
+```
+
+##### 2. 語音合成（Text-to-Speech）
+- **方案**：Web Speech API（零成本）
+- **特色**：
+  - Optimist：較高音調（pitch: 1.2）、略快語速（rate: 1.1）
+  - Skeptic：較低音調（pitch: 0.8）、略慢語速（rate: 0.9）
+- **升級路徑**：Phase 5+ 可改用 Google Cloud TTS / ElevenLabs
+
+##### 3. Glitch Effect 按鈕
+- **風格**：賽博龐克數位故障視覺
+- **實現**：CSS 動畫 + text-shadow 偏移
+- **顏色**：青色 + 洋紅色陰影、青綠色邊框發光
+
+##### 4. 質詢環節（Cross-Examination）
+- **機制**：快節奏問答，限制回應長度（max_tokens=100）
+- **Prompt**：強制封閉式問題（Yes/No）
+- **節奏**：利用 Groq 速度優勢製造緊張感
+
+##### 5. 上帝模式（User Injection）
+- **功能**：允許用戶中途注入突發事件
+- **實現**：新增 SSE 事件 `user_injection`，將輸入作為 `HumanMessage` 注入 state
+
+#### 🏗️ 建設性增強（Constructiveness Features）
+
+##### 1. 謬誤偵測器（Fallacy Detective）
+- **目標**：標記邏輯漏洞（人身攻擊、稻草人、訴諸情感等）
+- **實現**：
+  - Phase 3：基於規則的關鍵字檢測
+  - Phase 4：使用 LLM 進行精確分析
+- **UI**：類似足球黃牌，在對話泡泡旁彈出警告標籤
+
+##### 2. 即時事實查核（Fact Check Cards）
+- **目標**：側邊欄展示引用來源與驗證狀態
+- **實現**：
+  - 整合 Tavily 搜尋結果
+  - 新增 SSE 事件 `fact_check`
+  - 側邊欄顯示資料卡（來源、信心度、摘要）
+- **Layout**：CSS Grid 三欄佈局（主對話 + 側邊欄）
+
+##### 3. 結構化總結矩陣（Decision Matrix）
+- **目標**：辯論結束後生成表格化比較
+- **格式**：
+  - 列（Rows）：爭點（經濟成本、道德風險、可行性）
+  - 欄（Cols）：正方觀點 vs. 反方觀點
+  - 格（Cells）：核心論據
+- **實現**：Moderator 輸出 JSON，前端渲染為表格
+
+##### 4. Reflection 機制（自我反思）
+- **目標**：Agent 在發言後自我批評
+- **流程**：
+  1. Agent 發言
+  2. Reflector 節點分析弱點
+  3. 下一輪改進策略
+- **Prompt**：「你的論點有什麼漏洞？對手可能如何反駁？」
+
+#### 🤖 多模型配置策略
+
+| 角色 | 模型 | 溫度 | 用途 | 成本/M tokens |
+|------|------|------|------|---------------|
+| **Optimist** | Qwen3 32B | 0.7 | 創意論述、中文優化 | $0.14 |
+| **Skeptic** | Qwen3 32B | 0.6 | 理性批判、邏輯分析 | $0.14 |
+| **Moderator** | GPT-OSS 120B | 0.3 | 評分總結、推理判斷 | $1.50 |
+| **Router** | Llama 4 Scout | 0.0 | 工具決策、快速路由 | 最低 |
+| **Fallback** | Llama 3.3 70B | 0.7 | 備用模型、容錯 | $0.27 |
+
+**環境變數配置**：
+```bash
+OPTIMIST_MODEL=qwen/qwen3-32b
+SKEPTIC_MODEL=qwen/qwen3-32b
+MODERATOR_MODEL=openai/gpt-oss-120b
+ROUTER_MODEL=llama-4-scout-17b
+FALLBACK_MODEL=llama-3.3-70b-versatile
+```
+
+#### 📊 擴展階段時程
+
+| 階段 | 時間 | 主要功能 | 狀態 |
+|------|------|---------|------|
+| **Phase 2.5** | 1 週 | 架構重構（Context API、SSE 擴展） | 🔄 計劃中 |
+| **Phase 3** | 3-4 週 | 側邊欄、多模型、工具層、TTS | 🔄 計劃中 |
+| **Phase 4** | 4-6 週 | Reflection、Moderator、質詢環節 | 📋 規劃中 |
+| **Phase 5** | 2-3 週 | UI 美化、Glitch Effect、動畫 | 📋 規劃中 |
+
+**總計**：Phase 2.5 → Phase 5 約 10-14 週完整實現
+
+#### 🎯 關鍵技術決策
+
+1. **保持 Token Streaming 架構**：不改用 LangGraph StateGraph，維持 main.py 直接 `llm.astream()` 優勢
+2. **動畫零依賴**：使用 Tailwind CSS 原生 keyframes，不引入 framer-motion
+3. **TTS 漸進式**：Phase 3 用 Web Speech API，Phase 5+ 升級到付費方案
+4. **成本優化**：辯手用 Qwen3 32B（低成本），裁判用 GPT-OSS 120B（高質量）
+5. **側邊欄響應式**：手機折疊為底部抽屜，平板/桌面顯示側邊欄
+
+#### 📁 新增檔案結構預覽
+
+```
+frontend/app/
+├── context/
+│   └── DebateContext.tsx        # 全局狀態管理
+├── hooks/
+│   ├── useDebate.ts             # 辯論狀態 Hook
+│   └── useTTS.ts                # TTS Hook
+└── components/
+    ├── FactCheckPanel.tsx       # 事實查核面板
+    ├── FallacyBadges.tsx        # 謬誤標籤
+    ├── ScoreBar.tsx             # 戰況拉鋸條
+    └── MatrixSummary.tsx        # 結構化總結
+
+backend/app/
+├── models.py                    # 多模型配置管理
+├── tools/
+│   ├── web_search.py           # Tavily + DuckDuckGo
+│   ├── fallacy_detector.py     # 謬誤檢測
+│   └── fact_checker.py         # 事實查核
+└── agents/
+    ├── moderator.py            # 裁判 Agent
+    └── reflector.py            # 反思邏輯
+```
+
+### 7.7 下一步行動
+
+#### 立即行動（本週）
+1. 📝 **更新計劃文件**：將進階功能規劃納入專案文檔
+2. 🔧 **環境準備**：確認 Groq API 額度、申請 Tavily API Key
+3. 🚀 **模型升級**：從 `llama-3.1-8b-instant` 升級到 `llama-3.3-70b-versatile`
+
+#### Phase 2 完成後
+1. 🏗️ **Phase 2.5**：重構前端狀態管理（Context API）
+2. 🎨 **Phase 3**：實現側邊欄、多模型、TTS、戰況條
+3. 🧠 **Phase 4**：Reflection、Moderator、質詢環節、上帝模式
+4. ✨ **Phase 5**：UI 美化、Glitch Effect、動畫優化
+
+#### 參考文件
+- 📖 [進階功能完整規劃](/.claude/plans/compressed-brewing-frog.md)
+- 📋 [實施指南](./IMPLEMENTATION.md)
+- 📝 [架構決策文件](./docs/ARCHITECTURE_DECISIONS.md)
 
 ---
 
@@ -784,6 +929,6 @@ MIT License
 
 ---
 
-**最後更新**：2025-12-03
-**專案版本**：v0.1.0
-**文件狀態**：✅ 規劃完成，準備實施
+**最後更新**：2025-12-10
+**專案版本**：v0.2.0
+**文件狀態**：✅ Phase 2 完成，進階功能規劃中
