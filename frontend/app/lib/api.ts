@@ -8,6 +8,8 @@ export type SSEEvent =
     | { type: 'speaker'; node: 'optimist' | 'skeptic'; text: string }
     | { type: 'token'; node: 'optimist' | 'skeptic'; text: string }
     | { type: 'speaker_end'; node: 'optimist' | 'skeptic' }
+    | { type: 'tool_start'; tool: string; query: string; node: string }  // Phase 3b
+    | { type: 'tool_end'; tool: string; node: string }                   // Phase 3b
     | { type: 'complete'; text: string }
     | { type: 'error'; text: string };
 

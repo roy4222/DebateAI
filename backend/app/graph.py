@@ -6,13 +6,15 @@ DebateAI - 辯論引擎狀態管理模組
 - Prompt 生成（build_prompt）
 - LangGraph StateGraph 節點與路由
 
-Phase 3a: 使用 LangGraph StateGraph 管理辯論流程
-- optimist_node / skeptic_node 異步節點
+Phase 3a/3b: 使用 LangGraph StateGraph 管理辯論流程
+- optimist_node / skeptic_node 異步節點（支援工具調用）
 - debate_graph.astream(state, stream_mode="messages") 進行串流
+- web_search_tool 提供網路搜尋能力
 """
 
 from typing import TypedDict, Literal, List, Annotated
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
+from langchain_core.tools import tool
 from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
@@ -45,6 +47,10 @@ OPTIMIST_SYSTEM = """你是一位充滿說服力的「樂觀辯手」。
 3. 如果對手提出質疑，必須正面反擊
 4. 禁止說「你說得對」「我同意」等退讓語句
 5. 使用繁體中文回應
+6. **如果需要數據或事實支持論點，請使用 web_search_tool 查詢**
+
+可用工具：
+- web_search_tool(query: str): 搜尋最新資訊、統計數據或事實
 """
 
 SKEPTIC_SYSTEM = """你是一位邏輯嚴謹的「懷疑辯手」。
@@ -55,21 +61,59 @@ SKEPTIC_SYSTEM = """你是一位邏輯嚴謹的「懷疑辯手」。
 3. 質疑對手的樂觀假設，要求提出證據
 4. 禁止認同對方觀點，保持批判立場
 5. 使用繁體中文回應
+6. **如果需要查證對手的論點，請使用 web_search_tool**
+
+可用工具：
+- web_search_tool(query: str): 搜尋最新資訊以查證論點
 """
+
+
+# ============================================================
+# 工具定義（Phase 3b）
+# ============================================================
+
+@tool
+async def web_search_tool(query: str) -> str:
+    """搜尋網路資料以獲取最新資訊、統計數據或事實。
+
+    當需要以下情況時使用此工具：
+    - 最新數據或統計資料
+    - 具體事件的日期和細節
+    - 科學研究結果
+    - 市場趨勢或商業資訊
+
+    Args:
+        query: 搜尋關鍵字（簡潔明確）
+
+    Returns:
+        格式化的搜尋結果摘要
+    """
+    from app.tools.search import web_search
+
+    result = await web_search(query)
+    return result.get("formatted", "搜尋失敗")
 
 
 # ============================================================
 # LLM 工廠
 # ============================================================
-def get_llm() -> ChatGroq:
-    """取得 LLM 實例"""
+def get_llm(bind_tools: bool = False):
+    """取得 LLM 實例
+
+    Args:
+        bind_tools: 是否綁定工具（Phase 3b）
+    """
     model_name = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-    return ChatGroq(
+    llm = ChatGroq(
         model=model_name,
         temperature=0.7,
         api_key=os.getenv("GROQ_API_KEY"),
         streaming=True
     )
+
+    if bind_tools:
+        return llm.bind_tools([web_search_tool])
+    return llm
 
 
 # ============================================================
@@ -157,41 +201,85 @@ def create_initial_state(topic: str, max_rounds: int) -> DebateState:
 
 
 # ============================================================
-# LangGraph StateGraph（Phase 3a）
+# LangGraph StateGraph（Phase 3a/3b）
 # ============================================================
 
+# 工具迭代上限（防止無限循環）
+MAX_TOOL_ITERATIONS = 3
+
 async def optimist_node(state: DebateState) -> dict:
-    """樂觀者節點
+    """樂觀者節點（支援工具調用）
     
-    ⚠️ 使用 ainvoke 讓 stream_mode="messages" 攔截 tokens
-    ⚠️ topic/max_rounds 不需返回（StateGraph 會保留未變更的欄位）
-    ⚠️ messages 使用 add_messages 註解，只需返回新訊息
+    ⚠️ while 循環處理多次工具調用
+    ⚠️ MAX_TOOL_ITERATIONS 限制防止無限循環
     """
-    llm = get_llm()
+    llm = get_llm(bind_tools=True)
     messages = build_prompt(state, "optimist")
+
     response = await llm.ainvoke(messages)
-    
+
+    # 處理工具調用循環（含迭代上限）
+    iterations = 0
+    while hasattr(response, 'tool_calls') and response.tool_calls and iterations < MAX_TOOL_ITERATIONS:
+        iterations += 1
+        messages.append(response)
+
+        for tool_call in response.tool_calls:
+            try:
+                tool_result = await web_search_tool.ainvoke(tool_call["args"])
+            except Exception as e:
+                tool_result = f"[搜尋錯誤] {str(e)}"
+            
+            messages.append(ToolMessage(
+                content=tool_result,
+                tool_call_id=tool_call["id"],
+                name="web_search_tool"
+            ))
+
+        response = await llm.ainvoke(messages)
+
     return {
-        "messages": [AIMessage(content=response.content, name="optimist")],
+        "messages": [AIMessage(content=response.content or "(無回應)", name="optimist")],
         "current_speaker": "skeptic"
     }
 
 
 async def skeptic_node(state: DebateState) -> dict:
-    """懷疑者節點
+    """懷疑者節點（支援工具調用）
     
     ⚠️ Skeptic 發言後 round_count += 1
-    ⚠️ 達到 max_rounds 時設定 current_speaker = "end"
+    ⚠️ MAX_TOOL_ITERATIONS 限制防止無限循環
     """
-    llm = get_llm()
+    llm = get_llm(bind_tools=True)
     messages = build_prompt(state, "skeptic")
+
     response = await llm.ainvoke(messages)
-    
+
+    # 處理工具調用循環（含迭代上限）
+    iterations = 0
+    while hasattr(response, 'tool_calls') and response.tool_calls and iterations < MAX_TOOL_ITERATIONS:
+        iterations += 1
+        messages.append(response)
+
+        for tool_call in response.tool_calls:
+            try:
+                tool_result = await web_search_tool.ainvoke(tool_call["args"])
+            except Exception as e:
+                tool_result = f"[搜尋錯誤] {str(e)}"
+            
+            messages.append(ToolMessage(
+                content=tool_result,
+                tool_call_id=tool_call["id"],
+                name="web_search_tool"
+            ))
+
+        response = await llm.ainvoke(messages)
+
     new_round = state["round_count"] + 1
     next_speaker = "end" if new_round >= state["max_rounds"] else "optimist"
-    
+
     return {
-        "messages": [AIMessage(content=response.content, name="skeptic")],
+        "messages": [AIMessage(content=response.content or "(無回應)", name="skeptic")],
         "current_speaker": next_speaker,
         "round_count": new_round
     }
