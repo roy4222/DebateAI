@@ -1,12 +1,10 @@
 """
 DebateAI Backend - FastAPI 應用
 
-Phase 2: 真正的 Token-Level 串流
-- main.py 直接控制 LLM 串流
-- graph.py 只負責狀態管理與 prompt 生成
-
-⚠️ 注意：目前未使用 LangGraph StateGraph，僅用其作為依賴（ChatGroq）
-   未來 Phase 3 可能重新引入 LangGraph 進行更複雜的工具調用流程
+Phase 3a: LangGraph StateGraph 串流
+- langgraph_debate_stream() 使用 debate_graph.astream(stream_mode="messages")
+- USE_LANGGRAPH 環境變數控制是否使用 LangGraph（預設 true）
+- 保留 real_debate_stream() 作為回退方案（USE_LANGGRAPH=false）
 """
 
 from fastapi import FastAPI
@@ -22,13 +20,14 @@ import os
 # 載入環境變數
 load_dotenv()
 
-app = FastAPI(title="DebateAI API", version="0.2.0")
+app = FastAPI(title="DebateAI API", version="0.3.0")
 
 
 # ============================================================
 # 環境變數
 # ============================================================
 USE_FAKE_STREAM = os.getenv("USE_FAKE_STREAM", "false").lower() == "true"
+USE_LANGGRAPH = os.getenv("USE_LANGGRAPH", "true").lower() == "true"  # Phase 3a: 預設使用 LangGraph
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 HAS_GROQ_KEY = bool(GROQ_API_KEY and len(GROQ_API_KEY) > 10)
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
@@ -178,14 +177,97 @@ async def real_debate_stream(topic: str, max_rounds: int = 3):
 
 
 # ============================================================
+# LangGraph StateGraph 串流（Phase 3a）
+# ============================================================
+async def langgraph_debate_stream(topic: str, max_rounds: int = 3):
+    """Phase 3a: 使用 LangGraph StateGraph 串流
+    
+    ⚠️ 關鍵驗證點：
+    1. tokens 是否逐一推送（打字機效果）
+    2. metadata["langgraph_node"] 是否正確提供發言者資訊
+    3. 輪次計算是否正確（無 off-by-one）
+    """
+    from app.graph import debate_graph, create_initial_state
+    
+    yield sse_event({'type': 'status', 'text': '⚡ 正在喚醒 AI 辯論引擎...'})
+    yield sse_event({'type': 'status', 'text': f'🔥 使用模型: {GROQ_MODEL} (LangGraph)'})
+    
+    state = create_initial_state(topic, max_rounds)
+    
+    current_node = None
+    round_count = 0  # 獨立追蹤輪次，skeptic 發言結束時 +1
+    
+    try:
+        async for message, metadata in debate_graph.astream(
+            state,
+            stream_mode="messages"
+        ):
+            # ⚠️ 防呆：metadata["langgraph_node"] 可能為 None
+            node = metadata.get("langgraph_node") if metadata else None
+            if not node:
+                continue  # 跳過無效事件
+            
+            # 節點切換時發送 speaker 事件
+            if node != current_node:
+                # 結束前一個節點
+                if current_node:
+                    yield sse_event({'type': 'speaker_end', 'node': current_node})
+                    # Skeptic 發言結束後才增加輪數
+                    if current_node == "skeptic":
+                        round_count += 1
+                
+                current_node = node
+                
+                # 計算顯示用輪次（optimist 開場時為第 1 輪）
+                display_round = round_count + 1
+                yield sse_event({
+                    'type': 'speaker',
+                    'node': node,
+                    'text': f'第 {display_round} 輪'
+                })
+            
+            # Token 串流
+            if hasattr(message, 'content') and message.content:
+                yield sse_event({
+                    'type': 'token',
+                    'node': node,
+                    'text': message.content
+                })
+        
+        # 最後一個節點結束
+        if current_node:
+            yield sse_event({'type': 'speaker_end', 'node': current_node})
+            if current_node == "skeptic":
+                round_count += 1
+        
+        yield sse_event({
+            'type': 'complete',
+            'text': f'✅ 辯論完成！共進行了 {round_count} 輪精彩交鋒。'
+        })
+    
+    except Exception as e:
+        yield sse_event({'type': 'error', 'text': f'LangGraph 錯誤: {str(e)}'})
+        if current_node:
+            yield sse_event({'type': 'speaker_end', 'node': current_node})
+
+
+# ============================================================
 # SSE 串流接口
 # ============================================================
 @app.post("/debate")
 async def start_debate(req: DebateRequest):
-    """啟動 AI 辯論串流"""
+    """啟動 AI 辯論串流
+    
+    串流模式選擇：
+    1. USE_FAKE_STREAM=true 或無 GROQ_API_KEY → fake_debate_stream
+    2. USE_LANGGRAPH=true（預設）→ langgraph_debate_stream（Phase 3a）
+    3. USE_LANGGRAPH=false → real_debate_stream（Phase 2 回退）
+    """
     
     if USE_FAKE_STREAM or not HAS_GROQ_KEY:
         stream_generator = fake_debate_stream(req.topic, req.max_rounds)
+    elif USE_LANGGRAPH:
+        stream_generator = langgraph_debate_stream(req.topic, req.max_rounds)
     else:
         stream_generator = real_debate_stream(req.topic, req.max_rounds)
     
@@ -207,8 +289,8 @@ async def start_debate(req: DebateRequest):
 async def root():
     return {
         "message": "Welcome to DebateAI API 🎭",
-        "version": "0.2.0",
-        "phase": 2,
+        "version": "0.3.0",
+        "phase": "3a",
         "docs": "/docs"
     }
 
@@ -217,10 +299,11 @@ async def root():
 async def health():
     return {
         "status": "healthy",
-        "version": "0.2.0",
-        "phase": 2,
+        "version": "0.3.0",
+        "phase": "3a",
         "has_groq_key": HAS_GROQ_KEY,
         "use_fake_stream": USE_FAKE_STREAM,
+        "use_langgraph": USE_LANGGRAPH,
         "model": GROQ_MODEL if HAS_GROQ_KEY else None,
-        "note": "LangGraph dependency present but not yet used for state management"
+        "note": "Phase 3a: Using LangGraph StateGraph for debate flow control"
     }

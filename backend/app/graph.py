@@ -4,16 +4,18 @@ DebateAI - 辯論引擎狀態管理模組
 職責：
 - 狀態定義（DebateState）
 - Prompt 生成（build_prompt）
-- 狀態更新（update_state_after_speaker）
+- LangGraph StateGraph 節點與路由
 
-⚠️ 注意：目前不使用 LangGraph StateGraph
-   LLM 串流由 main.py 直接控制以實現真正的 token-level 串流
-   langgraph 依賴保留供 ChatGroq 使用，未來 Phase 3 可能重新引入
+Phase 3a: 使用 LangGraph StateGraph 管理辯論流程
+- optimist_node / skeptic_node 異步節點
+- debate_graph.astream(state, stream_mode="messages") 進行串流
 """
 
 from typing import TypedDict, Literal, List, Annotated
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langchain_groq import ChatGroq
+from langgraph.graph import StateGraph, END
+from langgraph.graph.message import add_messages
 import os
 
 
@@ -21,8 +23,11 @@ import os
 # 狀態定義
 # ============================================================
 class DebateState(TypedDict):
-    """辯論狀態"""
-    messages: List[BaseMessage]  # 對話歷史
+    """辯論狀態
+    
+    ⚠️ messages 使用 add_messages 註解，LangGraph 會自動合併新舊訊息
+    """
+    messages: Annotated[List[BaseMessage], add_messages]  # 自動累積訊息
     topic: str                   # 辯論主題
     current_speaker: Literal["optimist", "skeptic", "end"]  # 下一位發言者
     round_count: int             # 當前輪數（Skeptic 發言後 +1）
@@ -138,7 +143,10 @@ def update_state_after_speaker(state: DebateState, speaker: str, content: str) -
 
 
 def create_initial_state(topic: str, max_rounds: int) -> DebateState:
-    """建立初始狀態"""
+    """建立初始狀態
+    
+    ⚠️ current_speaker 必須與入口點對齊（預設 optimist）
+    """
     return {
         "messages": [],
         "topic": topic,
@@ -146,3 +154,81 @@ def create_initial_state(topic: str, max_rounds: int) -> DebateState:
         "round_count": 0,
         "max_rounds": max_rounds
     }
+
+
+# ============================================================
+# LangGraph StateGraph（Phase 3a）
+# ============================================================
+
+async def optimist_node(state: DebateState) -> dict:
+    """樂觀者節點
+    
+    ⚠️ 使用 ainvoke 讓 stream_mode="messages" 攔截 tokens
+    ⚠️ topic/max_rounds 不需返回（StateGraph 會保留未變更的欄位）
+    ⚠️ messages 使用 add_messages 註解，只需返回新訊息
+    """
+    llm = get_llm()
+    messages = build_prompt(state, "optimist")
+    response = await llm.ainvoke(messages)
+    
+    return {
+        "messages": [AIMessage(content=response.content, name="optimist")],
+        "current_speaker": "skeptic"
+    }
+
+
+async def skeptic_node(state: DebateState) -> dict:
+    """懷疑者節點
+    
+    ⚠️ Skeptic 發言後 round_count += 1
+    ⚠️ 達到 max_rounds 時設定 current_speaker = "end"
+    """
+    llm = get_llm()
+    messages = build_prompt(state, "skeptic")
+    response = await llm.ainvoke(messages)
+    
+    new_round = state["round_count"] + 1
+    next_speaker = "end" if new_round >= state["max_rounds"] else "optimist"
+    
+    return {
+        "messages": [AIMessage(content=response.content, name="skeptic")],
+        "current_speaker": next_speaker,
+        "round_count": new_round
+    }
+
+
+def should_continue(state: DebateState) -> str:
+    """路由函數：根據 current_speaker 決定下一個節點"""
+    return state["current_speaker"]
+
+
+# 建立 StateGraph
+_graph = StateGraph(DebateState)
+_graph.add_node("optimist", optimist_node)
+_graph.add_node("skeptic", skeptic_node)
+
+# 設定入口點（根據初始 current_speaker 決定）
+_graph.set_conditional_entry_point(
+    should_continue,
+    {
+        "optimist": "optimist",
+        "skeptic": "skeptic",
+        "end": END
+    }
+)
+
+# 設定邊（每個節點結束後根據 current_speaker 決定）
+_graph.add_conditional_edges(
+    "optimist",
+    should_continue,
+    {"skeptic": "skeptic", "end": END}
+)
+
+_graph.add_conditional_edges(
+    "skeptic",
+    should_continue,
+    {"optimist": "optimist", "end": END}
+)
+
+# 編譯為可執行的 graph
+debate_graph = _graph.compile()
