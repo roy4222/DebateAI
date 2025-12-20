@@ -1,10 +1,10 @@
 """
 DebateAI Backend - FastAPI 應用
 
-Phase 3b: LangGraph astream_events + 搜尋工具
-- langgraph_debate_stream() 使用 debate_graph.astream_events(version="v2")
-- web_search_tool 提供 Tavily + DuckDuckGo 三層容錯搜尋
-- on_tool_start / on_tool_end 事件正確觸發前端搜尋指示器
+Phase 3c: LangGraph ToolNode 架構
+- Agent 節點只負責決策，ToolNode 負責執行工具
+- astream_events(version="v2") 可正確捕獲 on_tool_start/on_tool_end
+- 修復搜尋指示器無法顯示的問題
 """
 
 from fastapi import FastAPI
@@ -16,11 +16,19 @@ import asyncio
 import json
 import re
 import os
+import logging
+
+# Phase 3c: 配置日誌
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # 載入環境變數
 load_dotenv()
 
-app = FastAPI(title="DebateAI API", version="0.3.1")
+app = FastAPI(title="DebateAI API", version="0.3.3")
 
 
 # ============================================================
@@ -175,13 +183,15 @@ async def real_debate_stream(topic: str, max_rounds: int = 3):
     rounds_completed = state['round_count']
     yield sse_event({'type': 'complete', 'text': f'✅ 辯論完成！共進行了 {rounds_completed} 輪精彩交鋒。'})
 # ============================================================
-# LangGraph StateGraph 串流（Phase 3b - astream_events）
+# LangGraph StateGraph 串流（Phase 3c - ToolNode 架構）
 # ============================================================
 async def langgraph_debate_stream(topic: str, max_rounds: int = 3):
-    """Phase 3b: 使用 astream_events 實現工具事件串流
+    """Phase 3c: 使用 ToolNode 實現工具事件追蹤
     
-    使用 astream_events 而非 astream(stream_mode="messages")
-    可以捕捉 on_tool_start 和 on_tool_end 事件
+    架構改進：
+    - Agent 節點只負責決策（返回 AIMessage，可能包含 tool_calls）
+    - ToolNode 獨立執行工具，LangGraph 自動觸發 on_tool_start/on_tool_end
+    - 修復搜尋指示器無法顯示的問題
     """
     from app.graph import debate_graph, create_initial_state
     
@@ -200,6 +210,11 @@ async def langgraph_debate_stream(topic: str, max_rounds: int = 3):
             version="v2"
         ):
             event_type = event.get("event")
+            event_name = event.get("name", "")
+            event_tags = event.get("tags", [])
+            
+            # Phase 3c: 診斷日誌
+            logger.debug(f"Event: type={event_type}, name={event_name}, tags={event_tags}")
             
             # 節點開始
             if event_type == "on_chain_start":
@@ -307,8 +322,8 @@ async def start_debate(req: DebateRequest):
 async def root():
     return {
         "message": "Welcome to DebateAI API 🎭",
-        "version": "0.3.1",
-        "phase": "3b",
+        "version": "0.3.3",
+        "phase": "3c",
         "docs": "/docs"
     }
 
@@ -317,11 +332,11 @@ async def root():
 async def health():
     return {
         "status": "healthy",
-        "version": "0.3.1",
-        "phase": "3b",
+        "version": "0.3.3",
+        "phase": "3c",
         "has_groq_key": HAS_GROQ_KEY,
         "use_fake_stream": USE_FAKE_STREAM,
         "use_langgraph": USE_LANGGRAPH,
         "model": GROQ_MODEL if HAS_GROQ_KEY else None,
-        "note": "Phase 3b: astream_events + web_search_tool (Tavily/DuckDuckGo)"
+        "note": "Phase 3c: ToolNode architecture for proper tool event tracking"
     }
