@@ -106,12 +106,24 @@ async def tool_callback_node(state: DebateState) -> dict:
 
 ---
 
+## 🐛 部署時遇到的問題
+
+| #   | 問題                                      | 根因                                             | 解決方案                                            |
+| --- | ----------------------------------------- | ------------------------------------------------ | --------------------------------------------------- |
+| 7   | Groq API 報錯 "Tools should have a name!" | AIMessage with tool_calls 缺少 name 屬性         | 創建新的 AIMessage 並加上 `name="optimist/skeptic"` |
+| 8   | 工具返回後傳遞 ToolMessage 給 LLM 出錯    | ToolMessage 可能缺少 name 屬性                   | 提取工具結果為文字，不直接傳 ToolMessage            |
+| 9   | Recursion limit of 25 reached             | Agent 處理工具結果後仍請求更多工具，造成無限循環 | 達到 MAX_TOOL_ITERATIONS 後不綁定工具給 LLM         |
+
+---
+
 ## ✅ 驗證結果
 
 - ✅ 搜尋指示器正常顯示「🔍 正在搜尋資料...」
 - ✅ 第一輪辯論者正常輸出
 - ✅ 工具事件 (on_tool_start/on_tool_end) 正確觸發
 - ✅ `/health` 返回 Phase 3c v0.3.3
+- ✅ 三輪辯論完整執行無錯誤
+- ✅ 生產環境部署成功（revision debate-api-00010-4p5）
 
 ---
 
@@ -120,4 +132,3 @@ async def tool_callback_node(state: DebateState) -> dict:
 1. Phase 3d：Moderator Agent（總結報告）
 2. 添加搜尋來源連結顯示
 3. 改進搜尋進度顯示（如「找到 3 個網站」）
-4. 部署 Phase 3c 到生產環境
