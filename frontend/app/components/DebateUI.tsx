@@ -248,7 +248,7 @@ export function DebateUI() {
   // 渲染
   // ============================================================
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="flex flex-col flex-1 min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {/* ========== Header ========== */}
       <header className="flex-shrink-0 px-6 py-4 border-b border-slate-800/50 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
