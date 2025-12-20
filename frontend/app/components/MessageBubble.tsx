@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export interface MessageBubbleProps {
-  node: "optimist" | "skeptic" | "system";
+  node: "optimist" | "skeptic" | "moderator" | "system";
   text: string;
   isTyping?: boolean;
   roundInfo?: string;
@@ -40,6 +40,14 @@ export function MessageBubble({
       containerClass: "ml-16",
       cardClass: "bg-rose-950/40 border-rose-500/30",
       textClass: "text-rose-100",
+    },
+    // Phase 3d: 新增 moderator 配置（藍色主題，置中且稍寬）
+    moderator: {
+      emoji: "⚖️",
+      label: "主持人",
+      containerClass: "mx-auto max-w-3xl",
+      cardClass: "bg-blue-950/40 border-blue-500/30",
+      textClass: "text-blue-100",
     },
     system: {
       emoji: "📢",

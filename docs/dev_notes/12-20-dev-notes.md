@@ -1,134 +1,111 @@
 # 📅 開發日記：DebateAI - 12/20
 
 **日期**：2025-12-20  
-**狀態**：✅ Phase 3c 完成 - ToolNode 架構重構  
-**版本**：0.3.3
+**狀態**：✅ Phase 3d 完成 - Moderator Agent with Per-Round Summaries  
+**版本**：0.3.4
 
 ---
 
 ## 🎉 今日成就 (Highlights)
 
-### Phase 3c：ToolNode 架構重構 ✅
+### Phase 3c：ToolNode 架構重構 ✅ (早上)
 
 | 檔案       | 變更內容                                                              |
 | ---------- | --------------------------------------------------------------------- |
 | `graph.py` | 引入 ToolNode、新增 `tool_callback_node`、重構 Agent 節點為僅決策模式 |
 | `main.py`  | 添加診斷日誌、版本更新至 0.3.3                                        |
 
-### 架構對比
+### Phase 3d：Moderator Agent 每輪總結 ✅ (下午)
 
-```
-Phase 3b (舊)：
-optimist_node → 內部手動調用 web_search_tool.ainvoke() → skeptic_node
-                        ↑ LangGraph 無法追蹤事件 ❌
-
-Phase 3c (新)：
-optimist_node → [has tool_calls?] → ToolNode → tool_callback → optimist_node
-                       ↓ no                      ↑ LangGraph 自動追蹤 ✅
-                  skeptic_node
-```
+| 檔案                | 變更內容                                                 |
+| ------------------- | -------------------------------------------------------- |
+| `graph.py`          | 新增 `moderator_node`、兩種總結 Prompt、修改輪數計數邏輯 |
+| `main.py`           | 處理 moderator SSE 事件、版本更新至 0.3.4                |
+| `MessageBubble.tsx` | 新增 moderator 藍色主題樣式                              |
+| `badge.tsx`         | 新增 moderator variant                                   |
+| `DebateUI.tsx`      | Message 介面支援 moderator 類型                          |
 
 ---
 
 ## 🔧 今日解決的問題
 
-| #   | 問題                                 | 根因                                       | 解決方案                            |
-| --- | ------------------------------------ | ------------------------------------------ | ----------------------------------- |
-| 1   | 搜尋指示器永遠不顯示                 | 工具在節點內部手動調用，LangGraph 無法追蹤 | 使用 ToolNode 獨立執行工具          |
-| 2   | 第一輪辯論者偶爾無輸出               | on_chain_start 事件識別問題                | 添加診斷日誌 + 狀態追蹤             |
-| 3   | 工具返回後 Prompt 重複 SystemMessage | `messages[-6:]` 可能包含 SystemMessage     | 只取非 SystemMessage 的訊息         |
-| 4   | 版本號不一致                         | Phase 3c 應為 0.3.3                        | 統一更新所有版本引用                |
-| 5   | 條件邊缺少容錯路由                   | tool_callback 可能意外成為 current_speaker | 添加 tool_callback 到所有條件邊     |
-| 6   | 使用字串比較 `__class__.__name__`    | 不夠 Pythonic                              | 改用 `isinstance(msg, ToolMessage)` |
+| #   | 問題                   | 根因                                       | 解決方案                        |
+| --- | ---------------------- | ------------------------------------------ | ------------------------------- |
+| 1   | 搜尋指示器永遠不顯示   | 工具在節點內部手動調用，LangGraph 無法追蹤 | 使用 ToolNode 獨立執行工具      |
+| 2   | 第一輪辯論者偶爾無輸出 | on_chain_start 事件識別問題                | 添加診斷日誌 + 狀態追蹤         |
+| 3   | round_count 顯示為 0   | 舊邏輯在 skeptic→optimist 時計數           | 改為在 skeptic→moderator 時計數 |
 
 ---
 
-## 📝 關鍵技術變更
+## 📝 關鍵技術變更 (Phase 3d)
 
-### 1. DebateState 擴展
-
-```python
-class DebateState(TypedDict):
-    messages: Annotated[List[BaseMessage], add_messages]
-    topic: str
-    current_speaker: Literal["optimist", "skeptic", "tools", "tool_callback", "end"]
-    round_count: int
-    max_rounds: int
-    tool_iterations: int  # 新增：工具迭代計數器
-    last_agent: Literal["optimist", "skeptic", ""]  # 新增：記錄上一個 Agent
-```
-
-### 2. Agent 節點簡化
+### 1. 新增 Moderator 節點
 
 ```python
-async def optimist_node(state: DebateState) -> dict:
-    # 只負責決策，不執行工具
-    response = await llm.ainvoke(prompt_messages)
+async def moderator_node(state: DebateState) -> dict:
+    """主持人節點：生成階段性或最終總結"""
+    current_round = state.get("round_count", 0) + 1
+    is_final = (current_round >= state.get("max_rounds", 3))
 
-    if has_tool_calls:
-        return {"messages": [response], "current_speaker": "tools", "last_agent": "optimist"}
+    if is_final:
+        system_prompt = MODERATOR_FINAL_SUMMARY
     else:
-        return {"messages": [final_response], "current_speaker": "skeptic"}
+        system_prompt = MODERATOR_ROUND_SUMMARY.format(round=current_round)
+
+    # ... LLM 調用 ...
+
+    return {
+        "messages": [final_response],
+        "current_speaker": "end" if is_final else "optimist",
+        "round_count": current_round  # Moderator 負責更新輪數
+    }
 ```
 
-### 3. ToolNode 自動管理
+### 2. 流程變更
 
-```python
-from langgraph.prebuilt import ToolNode
-
-tool_node = ToolNode([web_search_tool])
-_graph.add_node("tools", tool_node)
+```
+Phase 3c: Optimist → Skeptic → [3輪?] → END
+Phase 3d: Optimist → Skeptic → Moderator → [3輪?] → Optimist/END
 ```
 
-### 4. 工具回調節點
+### 3. 前端樣式
 
-```python
-async def tool_callback_node(state: DebateState) -> dict:
-    iterations = state.get("tool_iterations", 0) + 1
-    if iterations >= MAX_TOOL_ITERATIONS:
-        return {"current_speaker": last_agent, "tool_iterations": 0}
-    return {"current_speaker": last_agent, "tool_iterations": iterations}
-```
+| 角色      | 顏色 | 位置 |
+| --------- | ---- | ---- |
+| Optimist  | 綠色 | 靠左 |
+| Skeptic   | 紅色 | 靠右 |
+| Moderator | 藍色 | 置中 |
 
 ---
 
 ## 📊 專案進度
 
-| 階段                       | 狀態      | 完成度 |
-| -------------------------- | --------- | ------ |
-| Phase 0（基礎架構）        | ✅ 完成   | 100%   |
-| Phase 1（雲端部署）        | ✅ 完成   | 100%   |
-| Phase 2（AI 辯論）         | ✅ 完成   | 100%   |
-| Phase 3a（LangGraph 遷移） | ✅ 完成   | 100%   |
-| Phase 3b（搜尋工具）       | ✅ 完成   | 100%   |
-| Phase 3c（ToolNode 重構）  | ✅ 完成   | 100%   |
-| Phase 3d（Moderator）      | 🔜 待開始 | 0%     |
-
----
-
-## 🐛 部署時遇到的問題
-
-| #   | 問題                                      | 根因                                             | 解決方案                                            |
-| --- | ----------------------------------------- | ------------------------------------------------ | --------------------------------------------------- |
-| 7   | Groq API 報錯 "Tools should have a name!" | AIMessage with tool_calls 缺少 name 屬性         | 創建新的 AIMessage 並加上 `name="optimist/skeptic"` |
-| 8   | 工具返回後傳遞 ToolMessage 給 LLM 出錯    | ToolMessage 可能缺少 name 屬性                   | 提取工具結果為文字，不直接傳 ToolMessage            |
-| 9   | Recursion limit of 25 reached             | Agent 處理工具結果後仍請求更多工具，造成無限循環 | 達到 MAX_TOOL_ITERATIONS 後不綁定工具給 LLM         |
+| 階段                       | 狀態    | 完成度 |
+| -------------------------- | ------- | ------ |
+| Phase 0（基礎架構）        | ✅ 完成 | 100%   |
+| Phase 1（雲端部署）        | ✅ 完成 | 100%   |
+| Phase 2（AI 辯論）         | ✅ 完成 | 100%   |
+| Phase 3a（LangGraph 遷移） | ✅ 完成 | 100%   |
+| Phase 3b（搜尋工具）       | ✅ 完成 | 100%   |
+| Phase 3c（ToolNode 重構）  | ✅ 完成 | 100%   |
+| Phase 3d（Moderator 總結） | ✅ 完成 | 100%   |
 
 ---
 
 ## ✅ 驗證結果
 
-- ✅ 搜尋指示器正常顯示「🔍 正在搜尋資料...」
-- ✅ 第一輪辯論者正常輸出
-- ✅ 工具事件 (on_tool_start/on_tool_end) 正確觸發
-- ✅ `/health` 返回 Phase 3c v0.3.3
-- ✅ 三輪辯論完整執行無錯誤
-- ✅ 生產環境部署成功（revision debate-api-00010-4p5）
+- ✅ `/health` 返回 v0.3.4, Phase 3d
+- ✅ 辯論流程：Optimist → Skeptic → Moderator → Complete
+- ✅ 每輪結束後 Moderator 生成小結（80-120 字）
+- ✅ 最終輪 Moderator 生成完整報告（200-300 字）
+- ✅ 前端藍色 Moderator 區塊正確顯示
+- ✅ 輪數計數正確（"共進行了 X 輪精彩交鋒"）
 
 ---
 
 ## 📌 下一步
 
-1. Phase 3d：Moderator Agent（總結報告）
+1. 部署到 Cloud Run 並驗證生產環境
 2. 添加搜尋來源連結顯示
 3. 改進搜尋進度顯示（如「找到 3 個網站」）
+4. 考慮 Phase 4：用戶可調整辯論參數（輪數、語調等）

@@ -31,7 +31,7 @@ class DebateState(TypedDict):
     """
     messages: Annotated[List[BaseMessage], add_messages]
     topic: str
-    current_speaker: Literal["optimist", "skeptic", "tools", "tool_callback", "end"]
+    current_speaker: Literal["optimist", "skeptic", "tools", "tool_callback", "moderator", "end"]
     round_count: int
     max_rounds: int
     tool_iterations: int  # Phase 3c: 工具迭代計數器
@@ -67,6 +67,52 @@ SKEPTIC_SYSTEM = """你是一位邏輯嚴謹的「懷疑辯手」。
 
 可用工具：
 - web_search_tool(query: str): 搜尋最新資訊以查證論點
+"""
+
+
+# Phase 3d: Moderator System Prompts
+MODERATOR_ROUND_SUMMARY = """你是一位中立的辯論主持人。
+請針對本輪辯論做簡短總結（80-120字）：
+
+格式：
+### 🔄 第 {round} 輪小結
+**樂觀者**: [核心論點 1 句話]
+**懷疑者**: [核心論點 1 句話]
+**分歧點**: [本輪最主要的爭議 1 句話]
+
+規則：
+1. 使用繁體中文
+2. 保持絕對中立
+3. 簡潔有力，不超過 120 字
+"""
+
+MODERATOR_FINAL_SUMMARY = """你是一位中立、客觀的辯論主持人。
+請根據完整辯論生成最終總結報告（200-300字）：
+
+格式：
+## 📊 辯論總結報告
+
+### 🟢 樂觀者核心論點
+- [論點 1]
+- [論點 2]
+
+### 🔴 懷疑者核心論點
+- [論點 1]
+- [論點 2]
+
+### ⚖️ 關鍵分歧點
+[雙方最主要的分歧是什麼？1-2 句話]
+
+### 💡 綜合評估
+[客觀分析雙方論證的優劣，指出哪些論點更有說服力，2-3 句話]
+
+### 🎯 結論建議
+[給讀者的實用建議，1 句話]
+
+規則：
+1. 使用繁體中文
+2. 保持中立客觀
+3. 總字數 200-300 字
 """
 
 
@@ -335,14 +381,14 @@ async def skeptic_node(state: DebateState) -> dict:
             "last_agent": "skeptic"
         }
     else:
-        new_round = state["round_count"] + 1
-        next_speaker = "end" if new_round >= state["max_rounds"] else "optimist"
+        # Phase 3d: 導向 Moderator（而非 Optimist 或 END）
         final_response = AIMessage(content=response.content or "(無回應)", name="skeptic")
+        
+        # ⚠️ 不再在此增加輪數，交由 Moderator 處理
         return {
             "messages": [final_response],
-            "current_speaker": next_speaker,
+            "current_speaker": "moderator",
             "last_agent": "skeptic",
-            "round_count": new_round,
             "tool_iterations": 0
         }
 
@@ -380,7 +426,76 @@ def should_continue(state: DebateState) -> str:
 
 
 # ============================================================
-# 建立 StateGraph（Phase 3c）
+# Phase 3d: Moderator 節點
+# ============================================================
+
+async def moderator_node(state: DebateState) -> dict:
+    """主持人節點：生成階段性或最終總結
+
+    邏輯：
+    - 輪次 < max_rounds: 階段性總結 → 返回 optimist
+    - 輪次 = max_rounds: 最終總結 → 返回 end
+    """
+    logger.debug("moderator_node: entering")
+
+    llm = get_llm(bind_tools=False)  # 不綁定工具
+
+    current_round = state.get("round_count", 0) + 1  # Moderator 執行時還未 ++
+    max_rounds = state.get("max_rounds", 3)
+    is_final = (current_round >= max_rounds)
+
+    # 選擇 Prompt
+    if is_final:
+        system_prompt = MODERATOR_FINAL_SUMMARY
+        prompt_context = f"""辯論主題：{state['topic']}
+
+完整辯論記錄：
+{format_messages(state['messages'], limit=30)}
+
+請生成最終總結報告。"""
+    else:
+        system_prompt = MODERATOR_ROUND_SUMMARY.format(round=current_round)
+
+        # ⚠️ 只提取本輪的 Optimist/Skeptic 對話（避免包含舊的 Moderator 總結）
+        recent_debate_msgs = [
+            m for m in state['messages'][-8:]
+            if getattr(m, 'name', None) in ("optimist", "skeptic")
+        ]
+
+        prompt_context = f"""辯論主題：{state['topic']}
+
+本輪對話：
+{format_messages(recent_debate_msgs, limit=6)}
+
+請生成第 {current_round} 輪小結。"""
+
+    prompt_messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=prompt_context)
+    ]
+
+    response = await llm.ainvoke(prompt_messages)
+    final_response = AIMessage(
+        content=response.content or "(無法生成總結)",
+        name="moderator"
+    )
+
+    # 決定下一步
+    new_round = current_round  # Moderator 完成後才更新輪數
+    next_speaker = "end" if is_final else "optimist"
+
+    logger.debug(f"moderator_node: round={new_round}, next={next_speaker}")
+
+    return {
+        "messages": [final_response],
+        "current_speaker": next_speaker,
+        "round_count": new_round,  # ⚠️ 重要：Moderator 負責更新輪數
+        "tool_iterations": 0  # 清零工具計數，讓下一輪可以使用工具
+    }
+
+
+# ============================================================
+# 建立 StateGraph（Phase 3d）
 # ============================================================
 
 # 建立 ToolNode
@@ -394,6 +509,7 @@ _graph.add_node("optimist", optimist_node)
 _graph.add_node("skeptic", skeptic_node)
 _graph.add_node("tools", tool_node)
 _graph.add_node("tool_callback", tool_callback_node)
+_graph.add_node("moderator", moderator_node)  # Phase 3d: 新增
 
 # 設定入口點
 _graph.set_conditional_entry_point(
@@ -402,6 +518,7 @@ _graph.set_conditional_entry_point(
         "optimist": "optimist",
         "skeptic": "skeptic",
         "tools": "tools",
+        "moderator": "moderator",  # Phase 3d: 新增
         "end": END
     }
 )
@@ -413,7 +530,8 @@ _graph.add_conditional_edges(
     {
         "tools": "tools",
         "skeptic": "skeptic",
-        "tool_callback": "tool_callback",  # 容錯路由
+        "tool_callback": "tool_callback",
+        "moderator": "moderator",  # Phase 3d: 容錯路由
         "end": END
     }
 )
@@ -425,7 +543,8 @@ _graph.add_conditional_edges(
     {
         "tools": "tools",
         "optimist": "optimist",
-        "tool_callback": "tool_callback",  # 容錯路由
+        "tool_callback": "tool_callback",
+        "moderator": "moderator",  # Phase 3d: 主要路由
         "end": END
     }
 )
@@ -440,11 +559,23 @@ _graph.add_conditional_edges(
     {
         "optimist": "optimist",
         "skeptic": "skeptic",
+        "moderator": "moderator",  # Phase 3d: 容錯路由
         "end": END
+    }
+)
+
+# Moderator 後的路由（Phase 3d）
+_graph.add_conditional_edges(
+    "moderator",
+    should_continue,
+    {
+        "optimist": "optimist",  # 未滿 3 輪，繼續辯論
+        "end": END               # 已滿 3 輪，結束
     }
 )
 
 # 編譯為可執行的 graph
 debate_graph = _graph.compile()
 
-logger.info("debate_graph compiled successfully (Phase 3c: ToolNode architecture)")
+logger.info("debate_graph compiled successfully (Phase 3d: Moderator Agent)")
+

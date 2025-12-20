@@ -15,7 +15,7 @@ import { Swords } from "lucide-react";
 
 // 訊息類型
 interface Message {
-  node: "optimist" | "skeptic" | "system";
+  node: "optimist" | "skeptic" | "moderator" | "system";
   text: string;
   roundInfo?: string;
 }

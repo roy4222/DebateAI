@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # 載入環境變數
 load_dotenv()
 
-app = FastAPI(title="DebateAI API", version="0.3.3")
+app = FastAPI(title="DebateAI API", version="0.3.4")
 
 
 # ============================================================
@@ -219,19 +219,32 @@ async def langgraph_debate_stream(topic: str, max_rounds: int = 3):
             # 節點開始
             if event_type == "on_chain_start":
                 name = event.get("name", "")
-                if name in ("optimist", "skeptic"):
+                # Phase 3d: 擴展支援 "moderator"
+                if name in ("optimist", "skeptic", "moderator"):
                     if current_node and current_node != name:
                         yield sse_event({'type': 'speaker_end', 'node': current_node})
-                        if current_node == "skeptic":
+                        # ⚠️ 當 skeptic → moderator 時增加輪數（表示一輪完成）
+                        if current_node == "skeptic" and name == "moderator":
                             round_count += 1
                     
                     current_node = name
-                    display_round = round_count + 1
-                    yield sse_event({
-                        'type': 'speaker',
-                        'node': name,
-                        'text': f'第 {display_round} 輪'
-                    })
+                    
+                    # 根據節點類型發送不同的 speaker 事件
+                    if name == "moderator":
+                        # Moderator 顯示特殊標記
+                        yield sse_event({
+                            'type': 'speaker',
+                            'node': 'moderator',
+                            'text': '總結報告'
+                        })
+                    else:
+                        # Optimist/Skeptic 顯示輪數
+                        display_round = round_count + 1
+                        yield sse_event({
+                            'type': 'speaker',
+                            'node': name,
+                            'text': f'第 {display_round} 輪'
+                        })
             
             # 工具開始
             elif event_type == "on_tool_start":
@@ -258,17 +271,17 @@ async def langgraph_debate_stream(topic: str, max_rounds: int = 3):
             elif event_type == "on_chat_model_stream":
                 chunk = event.get("data", {}).get("chunk")
                 if chunk and hasattr(chunk, "content") and chunk.content:
-                    yield sse_event({
-                        'type': 'token',
-                        'node': current_node or "unknown",
-                        'text': chunk.content
-                    })
+                    # Phase 3d: 擴展支援 moderator
+                    if current_node in ("optimist", "skeptic", "moderator"):
+                        yield sse_event({
+                            'type': 'token',
+                            'node': current_node,
+                            'text': chunk.content
+                        })
         
         # 結束
         if current_node:
             yield sse_event({'type': 'speaker_end', 'node': current_node})
-            if current_node == "skeptic":
-                round_count += 1
         
         yield sse_event({
             'type': 'complete',
@@ -322,8 +335,8 @@ async def start_debate(req: DebateRequest):
 async def root():
     return {
         "message": "Welcome to DebateAI API 🎭",
-        "version": "0.3.3",
-        "phase": "3c",
+        "version": "0.3.4",
+        "phase": "3d",
         "docs": "/docs"
     }
 
@@ -332,11 +345,11 @@ async def root():
 async def health():
     return {
         "status": "healthy",
-        "version": "0.3.3",
-        "phase": "3c",
+        "version": "0.3.4",
+        "phase": "3d",
         "has_groq_key": HAS_GROQ_KEY,
         "use_fake_stream": USE_FAKE_STREAM,
         "use_langgraph": USE_LANGGRAPH,
         "model": GROQ_MODEL if HAS_GROQ_KEY else None,
-        "note": "Phase 3c: ToolNode architecture for proper tool event tracking"
+        "note": "Phase 3d: Moderator Agent with per-round summaries"
     }

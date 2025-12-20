@@ -12,6 +12,7 @@ const badgeVariants = cva(
         optimist:
           "bg-emerald-950/60 text-emerald-400 border border-emerald-500/30",
         skeptic: "bg-rose-950/60 text-rose-400 border border-rose-500/30",
+        moderator: "bg-blue-950/60 text-blue-400 border border-blue-500/30",
         system: "bg-slate-800/60 text-slate-400 border border-slate-600/30",
         outline: "border border-slate-700 text-slate-300",
       },
