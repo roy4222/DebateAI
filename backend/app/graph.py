@@ -217,22 +217,37 @@ async def optimist_node(state: DebateState) -> dict:
     返回的 AIMessage 可能包含 tool_calls，由條件邊決定下一步
     """
     logger.debug("optimist_node: entering")
-    llm = get_llm(bind_tools=True)
+    
+    # 檢查是否已達到工具迭代上限
+    tool_iterations = state.get('tool_iterations', 0)
+    should_bind_tools = tool_iterations < MAX_TOOL_ITERATIONS
+    
+    llm = get_llm(bind_tools=should_bind_tools)
+    logger.debug(f"optimist_node: tool_iterations={tool_iterations}, bind_tools={should_bind_tools}")
     
     # 檢查是否從工具回調返回（messages 中有 ToolMessage）
     messages = state.get('messages', [])
     if messages and isinstance(messages[-1], ToolMessage):
-        # 從工具返回：只取非 SystemMessage 的訊息
-        recent_messages = []
-        for msg in reversed(messages):
-            if isinstance(msg, SystemMessage):
-                break
-            recent_messages.insert(0, msg)
+        # 從工具返回：提取工具結果作為文字
+        tool_results = []
+        for msg in reversed(messages[-6:]):
+            if isinstance(msg, ToolMessage):
+                tool_results.insert(0, f"[搜尋結果]: {msg.content}")
+        
+        tool_context = "\n".join(tool_results) if tool_results else ""
+        history = format_messages(messages)
         
         prompt_messages = [
             SystemMessage(content=OPTIMIST_SYSTEM),
-            HumanMessage(content=f"辯論主題：{state['topic']}\n\n請根據搜尋結果繼續發言。")
-        ] + recent_messages[-6:]  # 限制長度
+            HumanMessage(content=f"""辯論主題：{state['topic']}
+
+{tool_context}
+
+請根據以上搜尋結果，以樂觀者身份繼續發言。（請直接發言，不要再搜尋）
+
+對話歷史：
+{history}""")
+        ]
     else:
         # 首次調用
         prompt_messages = build_prompt(state, "optimist")
@@ -244,8 +259,14 @@ async def optimist_node(state: DebateState) -> dict:
     has_tool_calls = hasattr(response, 'tool_calls') and response.tool_calls
     
     if has_tool_calls:
+        # ℹ️ Groq 要求所有 AIMessage 都有 name 屬性
+        response_with_name = AIMessage(
+            content=response.content or "",
+            tool_calls=response.tool_calls,
+            name="optimist"
+        )
         return {
-            "messages": [response],
+            "messages": [response_with_name],
             "current_speaker": "tools",
             "last_agent": "optimist"
         }
@@ -263,21 +284,36 @@ async def optimist_node(state: DebateState) -> dict:
 async def skeptic_node(state: DebateState) -> dict:
     """懷疑者節點（Phase 3c: 僅決策，不執行工具）"""
     logger.debug("skeptic_node: entering")
-    llm = get_llm(bind_tools=True)
+    
+    # 檢查是否已達到工具迭代上限
+    tool_iterations = state.get('tool_iterations', 0)
+    should_bind_tools = tool_iterations < MAX_TOOL_ITERATIONS
+    
+    llm = get_llm(bind_tools=should_bind_tools)
+    logger.debug(f"skeptic_node: tool_iterations={tool_iterations}, bind_tools={should_bind_tools}")
     
     messages = state.get('messages', [])
     if messages and isinstance(messages[-1], ToolMessage):
-        # 從工具返回：只取非 SystemMessage 的訊息
-        recent_messages = []
-        for msg in reversed(messages):
-            if isinstance(msg, SystemMessage):
-                break
-            recent_messages.insert(0, msg)
+        # 從工具返回：提取工具結果作為文字
+        tool_results = []
+        for msg in reversed(messages[-6:]):
+            if isinstance(msg, ToolMessage):
+                tool_results.insert(0, f"[搜尋結果]: {msg.content}")
+        
+        tool_context = "\n".join(tool_results) if tool_results else ""
+        history = format_messages(messages)
         
         prompt_messages = [
             SystemMessage(content=SKEPTIC_SYSTEM),
-            HumanMessage(content=f"辯論主題：{state['topic']}\n\n請根據搜尋結果繼續反駁。")
-        ] + recent_messages[-6:]
+            HumanMessage(content=f"""辯論主題：{state['topic']}
+
+{tool_context}
+
+請根據以上搜尋結果，以懷疑者身份繼續反駁。（請直接發言，不要再搜尋）
+
+對話歷史：
+{history}""")
+        ]
     else:
         prompt_messages = build_prompt(state, "skeptic")
     
@@ -287,8 +323,14 @@ async def skeptic_node(state: DebateState) -> dict:
     has_tool_calls = hasattr(response, 'tool_calls') and response.tool_calls
     
     if has_tool_calls:
+        # ℹ️ Groq 要求所有 AIMessage 都有 name 屬性
+        response_with_name = AIMessage(
+            content=response.content or "",
+            tool_calls=response.tool_calls,
+            name="skeptic"
+        )
         return {
-            "messages": [response],
+            "messages": [response_with_name],
             "current_speaker": "tools",
             "last_agent": "skeptic"
         }
