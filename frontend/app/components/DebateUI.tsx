@@ -11,7 +11,6 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Swords } from "lucide-react";
 
 // 訊息類型
 interface Message {
@@ -248,37 +247,39 @@ export function DebateUI() {
   // 渲染
   // ============================================================
   return (
-    <div className="flex flex-col flex-1 min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* ========== Header ========== */}
-      <header className="flex-shrink-0 px-6 py-4 border-b border-slate-800/50 backdrop-blur-sm">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-purple-600 to-blue-600">
-              <Swords className="size-5 text-white" />
+    <div className="flex flex-col flex-1 h-screen overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      {/* ========== Header (只在有內容時顯示) ========== */}
+      {(currentTopic || status) && (
+        <header className="flex-shrink-0 px-6 py-3 border-b border-slate-800/50 bg-slate-900/95 ">
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
+            {/* 辯論主題顯示 */}
+            <div className="flex-1">
+              {currentTopic && (
+                <Badge
+                  variant="outline"
+                  className="px-4 py-2 text-sm border-purple-500/50 bg-purple-500/10"
+                >
+                  🎯 辯論主題：{currentTopic}
+                </Badge>
+              )}
             </div>
-            <div>
-              <h1 className="text-xl font-bold bg-gradient-to-r from-purple-400 via-pink-500 to-blue-400 bg-clip-text text-transparent">
-                DebateAI
-              </h1>
-              <p className="text-xs text-slate-500">Multi-Agent 即時辯論平台</p>
-            </div>
-          </div>
 
-          {/* 狀態指示 */}
-          <div className="text-right">
-            {status && (
-              <Badge variant="outline" className="text-slate-400">
-                {status}
-              </Badge>
-            )}
-            {connectionTime && (
-              <p className="text-xs text-slate-500 mt-1">
-                連線耗時：{(connectionTime / 1000).toFixed(1)}s
-              </p>
-            )}
+            {/* 狀態指示 */}
+            <div className="text-right flex items-center gap-3">
+              {status && (
+                <Badge variant="outline" className="text-slate-400">
+                  {status}
+                </Badge>
+              )}
+              {connectionTime && (
+                <span className="text-xs text-slate-500">
+                  連線耗時：{(connectionTime / 1000).toFixed(1)}s
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* ========== Main Chat Area ========== */}
       <main className="flex-1 overflow-y-auto px-6 py-6">
@@ -297,18 +298,6 @@ export function DebateUI() {
                 </CardDescription>
               </CardHeader>
             </Card>
-          )}
-
-          {/* 辯論主題顯示 */}
-          {currentTopic && (
-            <div className="mb-6 text-center">
-              <Badge
-                variant="outline"
-                className="px-4 py-2 text-base border-purple-500/50 bg-purple-500/10"
-              >
-                🎯 辯論主題：{currentTopic}
-              </Badge>
-            </div>
           )}
 
           {/* Phase 3b: 搜尋指示器 */}
