@@ -5,9 +5,9 @@
 // SSE 事件類型定義
 export type SSEEvent =
     | { type: 'status'; text: string }
-    | { type: 'speaker'; node: 'optimist' | 'skeptic'; text: string }
-    | { type: 'token'; node: 'optimist' | 'skeptic'; text: string }
-    | { type: 'speaker_end'; node: 'optimist' | 'skeptic' }
+    | { type: 'speaker'; node: 'optimist' | 'skeptic' | 'moderator'; text: string }
+    | { type: 'token'; node: 'optimist' | 'skeptic' | 'moderator'; text: string }
+    | { type: 'speaker_end'; node: 'optimist' | 'skeptic' | 'moderator' }
     | { type: 'tool_start'; tool: string; query: string; node: string }  // Phase 3b
     | { type: 'tool_end'; tool: string; node: string }                   // Phase 3b
     | { type: 'complete'; text: string }
@@ -120,3 +120,138 @@ export async function checkHealth(): Promise<boolean> {
         return false;
     }
 }
+
+
+// ============================================================
+// Phase 4: Debate History Types & API
+// ============================================================
+
+/** 訊息格式 (前端使用) */
+export interface Message {
+    node: "optimist" | "skeptic" | "moderator" | "system";
+    text: string;
+    roundInfo?: string;
+}
+
+/** 辯論摘要 (列表用) */
+export interface DebateSummary {
+    id: string;
+    topic: string;
+    created_at: string;
+    rounds_completed: number;
+}
+
+/** 辯論詳細 */
+export interface DebateDetail extends DebateSummary {
+    messages: Array<{
+        version: number;
+        type: string;
+        content: string;
+        node?: "optimist" | "skeptic" | "moderator" | null;
+        roundInfo?: string;
+        timestamp?: string;
+    }>;
+    max_rounds: number;
+    updated_at: string;
+}
+
+/** 分頁結果 */
+export interface PaginatedResult<T> {
+    data: T[];
+    total: number;
+    page: number;
+    page_size: number;
+}
+
+/**
+ * 儲存辯論到資料庫
+ */
+export async function saveDebate(
+    topic: string,
+    messages: Message[],
+    maxRounds: number = 3,
+    roundsCompleted: number = 0
+): Promise<{ success: boolean; debate_id?: string; error?: string }> {
+    try {
+        const response = await fetch(`${API_URL}/debate/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                topic,
+                messages,
+                max_rounds: maxRounds,
+                rounds_completed: roundsCompleted,
+            }),
+        });
+
+        if (!response.ok) {
+            return { success: false, error: `HTTP ${response.status}` };
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Save debate failed:', error);
+        return { success: false, error: String(error) };
+    }
+}
+
+/**
+ * 取得最近辯論列表 (用於 sidebar)
+ */
+export async function getRecentDebates(limit: number = 5): Promise<DebateSummary[]> {
+    try {
+        const response = await fetch(`${API_URL}/debate/history?limit=${limit}`);
+
+        if (!response.ok) {
+            return [];
+        }
+
+        const data = await response.json();
+        return data.debates || [];
+    } catch (error) {
+        console.error('Get recent debates failed:', error);
+        return [];
+    }
+}
+
+/**
+ * 取得單一辯論詳細內容
+ */
+export async function getDebateById(id: string): Promise<DebateDetail | null> {
+    try {
+        const response = await fetch(`${API_URL}/debate/history/${id}`);
+
+        if (!response.ok) {
+            return null;
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Get debate by id failed:', error);
+        return null;
+    }
+}
+
+/**
+ * 分頁取得辯論列表
+ */
+export async function getDebatesPaginated(
+    page: number = 1,
+    pageSize: number = 20
+): Promise<PaginatedResult<DebateSummary>> {
+    try {
+        const response = await fetch(
+            `${API_URL}/debate/history/list?page=${page}&page_size=${pageSize}`
+        );
+
+        if (!response.ok) {
+            return { data: [], total: 0, page, page_size: pageSize };
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Get debates paginated failed:', error);
+        return { data: [], total: 0, page, page_size: pageSize };
+    }
+}
+

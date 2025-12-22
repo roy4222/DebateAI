@@ -343,13 +343,76 @@ async def root():
 
 @app.get("/health")
 async def health():
+    from app.supabase_client import is_supabase_enabled
     return {
         "status": "healthy",
-        "version": "0.3.4",
-        "phase": "3d",
+        "version": "0.4.0",
+        "phase": "4",
         "has_groq_key": HAS_GROQ_KEY,
         "use_fake_stream": USE_FAKE_STREAM,
         "use_langgraph": USE_LANGGRAPH,
         "model": GROQ_MODEL if HAS_GROQ_KEY else None,
-        "note": "Phase 3d: Moderator Agent with per-round summaries"
+        "supabase_enabled": is_supabase_enabled(),
+        "note": "Phase 4: Supabase debate history"
     }
+
+
+# ============================================================
+# Debate History Endpoints (Phase 4)
+# ============================================================
+class SaveDebateRequest(BaseModel):
+    topic: str
+    messages: list
+    max_rounds: int = 3
+    rounds_completed: int = 0
+
+
+@app.post("/debate/save")
+async def save_debate_endpoint(req: SaveDebateRequest):
+    """儲存辯論到 Supabase"""
+    from app.services.debate_service import save_debate
+    
+    debate_id = await save_debate(
+        topic=req.topic,
+        messages=req.messages,
+        max_rounds=req.max_rounds,
+        rounds_completed=req.rounds_completed
+    )
+    
+    if debate_id:
+        return {"success": True, "debate_id": debate_id}
+    else:
+        return {"success": False, "error": "Failed to save debate"}
+
+
+@app.get("/debate/history")
+async def get_history_endpoint(limit: int = 5):
+    """取得最近辯論列表 (用於 sidebar)"""
+    from app.services.debate_service import get_recent_debates
+    
+    debates = await get_recent_debates(limit=limit)
+    return {"debates": debates}
+
+
+@app.get("/debate/history/list")
+async def get_history_paginated_endpoint(page: int = 1, page_size: int = 20):
+    """分頁取得辯論列表"""
+    from app.services.debate_service import get_debates_paginated
+    
+    result = await get_debates_paginated(page=page, page_size=page_size)
+    return result
+
+
+@app.get("/debate/history/{debate_id}")
+async def get_debate_detail_endpoint(debate_id: str):
+    """取得單一辯論詳細內容"""
+    from app.services.debate_service import get_debate_by_id
+    
+    debate = await get_debate_by_id(debate_id)
+    
+    if debate:
+        return debate
+    else:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Debate not found")
+

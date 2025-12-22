@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { MessageBubble } from "./MessageBubble";
 import { TopicForm } from "./TopicForm";
-import { streamDebate, SSEEvent } from "../lib/api";
+import { streamDebate, SSEEvent, saveDebate } from "../lib/api";
 import {
   Card,
   CardHeader,
@@ -11,6 +11,7 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useDebateHistory } from "@/contexts/DebateHistoryContext";
 
 // 訊息類型
 interface Message {
@@ -27,8 +28,12 @@ interface Message {
  * - useRef 解決 React 狀態非同步問題
  * - 自動滾動
  * - 連線階段 30 秒超時（首包後解除）
+ * - Phase 4: 自動儲存並更新 sidebar
  */
 export function DebateUI() {
+  // Phase 4: 使用 context 來更新 sidebar
+  const { addNewDebate } = useDebateHistory();
+
   // ============================================================
   // 狀態管理
   // ============================================================
@@ -54,6 +59,9 @@ export function DebateUI() {
   // ============================================================
   const textBufferRef = useRef<{ [key: string]: string }>({});
   const roundInfoRef = useRef<{ [key: string]: string }>({});
+  const messagesRef = useRef<Message[]>([]);  // Phase 4: 同步追蹤訊息避免 race condition
+  const currentTopicRef = useRef<string>("");  // Phase 4: 避免 stale closure
+  const addNewDebateRef = useRef(addNewDebate);  // Phase 4: 避免 stale closure
   const abortControllerRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -63,6 +71,11 @@ export function DebateUI() {
   const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
+
+  // Phase 4: 保持 ref 最新
+  useEffect(() => {
+    addNewDebateRef.current = addNewDebate;
+  }, [addNewDebate]);
 
   // ============================================================
   // 自動滾動
@@ -77,9 +90,51 @@ export function DebateUI() {
   const clearAllBuffers = useCallback(() => {
     textBufferRef.current = {};
     roundInfoRef.current = {};
+    messagesRef.current = [];  // Phase 4: 清空 ref
     setCurrentText({});
     setCurrentRound({});
   }, []);
+
+  // ============================================================
+  // Phase 4: 自動儲存辯論
+  // ============================================================
+  const handleAutoSave = useCallback(async (completeText: string) => {
+    // 從 complete 訊息解析輪數
+    const roundMatch = completeText.match(/(\d+)\s*輪/);
+    const roundsCompleted = roundMatch ? parseInt(roundMatch[1], 10) : 3;
+
+    // ⚠️ 使用 ref 取得最新值，避免 stale closure
+    const messagesToSave = [...messagesRef.current];
+    const topic = currentTopicRef.current;
+
+    if (!topic || messagesToSave.length === 0) {
+      console.log("No topic or messages to save");
+      return;
+    }
+
+    console.log(`Saving debate: ${topic}, ${messagesToSave.length} messages, ${roundsCompleted} rounds`);
+
+    try {
+      const result = await saveDebate(topic, messagesToSave, 3, roundsCompleted);
+
+      if (result.success && result.debate_id) {
+        console.log(`Debate saved: ${result.debate_id}`);
+        setStatus("✅ 辯論完成並已儲存！");
+
+        // 使用 ref 呼叫最新的 addNewDebate
+        addNewDebateRef.current({
+          id: result.debate_id,
+          topic,
+          created_at: new Date().toISOString(),
+          rounds_completed: roundsCompleted,
+        });
+      } else {
+        console.error("Failed to save debate:", result.error);
+      }
+    } catch (error) {
+      console.error("Save debate error:", error);
+    }
+  }, []);  // 無依賴，完全使用 ref
 
   // ============================================================
   // SSE 事件處理器
@@ -130,9 +185,13 @@ export function DebateUI() {
         const finalText = textBufferRef.current[event.node] || "";
         const roundInfo = roundInfoRef.current[event.node] || "";
 
+        // Phase 4: 同步更新 ref（先於 state 更新）
+        const newMessage = { node: event.node, text: finalText, roundInfo };
+        messagesRef.current = [...messagesRef.current, newMessage];
+
         setMessages((prev) => [
           ...prev,
-          { node: event.node, text: finalText, roundInfo },
+          newMessage,
         ]);
 
         textBufferRef.current[event.node] = "";
@@ -142,8 +201,14 @@ export function DebateUI() {
         break;
 
       case "complete":
-        setSearchStatus({ isSearching: false }); // Phase 3b: 清除搜尋狀態
+        setSearchStatus({ isSearching: false });
         setStatus(event.text);
+
+        // Phase 4: 自動儲存辯論
+        // 使用 setTimeout 確保 messages 已更新
+        setTimeout(() => {
+          handleAutoSave(event.text);
+        }, 100);
         break;
 
       case "error":
@@ -159,8 +224,7 @@ export function DebateUI() {
           node: event.node,
         });
         setStatus(
-          `🔍 ${event.node === "optimist" ? "樂觀者" : "懷疑者"}正在搜尋：${
-            event.query
+          `🔍 ${event.node === "optimist" ? "樂觀者" : "懷疑者"}正在搜尋：${event.query
           }`
         );
         break;
@@ -179,6 +243,7 @@ export function DebateUI() {
     // 保存主題並清空輸入框
     const debateTopic = topic.trim();
     setCurrentTopic(debateTopic);
+    currentTopicRef.current = debateTopic;  // Phase 4: 同步 ref
     setTopic(""); // 清空輸入框
 
     // 重置狀態
