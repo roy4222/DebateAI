@@ -39,9 +39,25 @@ class DebateState(TypedDict):
 
 
 # ============================================================
-# System Prompts
+# 語言設定
 # ============================================================
-OPTIMIST_SYSTEM = """你是一位充滿說服力的「樂觀辯手」。
+current_language = "zh"  # 預設繁體中文
+
+def set_language(lang: str):
+    """設定語言：'zh' (繁體中文) 或 'en' (English)"""
+    global current_language
+    current_language = lang if lang in ("zh", "en") else "zh"
+    logger.info(f"🌐 Language set to: {current_language}")
+
+def get_language() -> str:
+    """取得當前語言設定"""
+    return current_language
+
+
+# ============================================================
+# System Prompts - 中文版
+# ============================================================
+OPTIMIST_SYSTEM_ZH = """你是一位充滿說服力的「樂觀辯手」。
 
 規則：
 1. 每次回應限 2-3 句話，簡短有力
@@ -55,7 +71,7 @@ OPTIMIST_SYSTEM = """你是一位充滿說服力的「樂觀辯手」。
 - web_search_tool(query: str): 搜尋最新資訊、統計數據或事實
 """
 
-SKEPTIC_SYSTEM = """你是一位邏輯嚴謹的「懷疑辯手」。
+SKEPTIC_SYSTEM_ZH = """你是一位邏輯嚴謹的「懷疑辯手」。
 
 規則：
 1. 每次回應限 2-3 句話，直擊要害
@@ -69,9 +85,7 @@ SKEPTIC_SYSTEM = """你是一位邏輯嚴謹的「懷疑辯手」。
 - web_search_tool(query: str): 搜尋最新資訊以查證論點
 """
 
-
-# Phase 3d: Moderator System Prompts
-MODERATOR_ROUND_SUMMARY = """你是一位中立的辯論主持人。
+MODERATOR_ROUND_SUMMARY_ZH = """你是一位中立的辯論主持人。
 請針對本輪辯論做簡短總結（80-120字）：
 
 格式：
@@ -86,7 +100,7 @@ MODERATOR_ROUND_SUMMARY = """你是一位中立的辯論主持人。
 3. 簡潔有力，不超過 120 字
 """
 
-MODERATOR_FINAL_SUMMARY = """你是一位中立、客觀的辯論主持人。
+MODERATOR_FINAL_SUMMARY_ZH = """你是一位中立、客觀的辯論主持人。
 請根據完整辯論生成最終總結報告（200-300字）：
 
 格式：
@@ -117,30 +131,138 @@ MODERATOR_FINAL_SUMMARY = """你是一位中立、客觀的辯論主持人。
 
 
 # ============================================================
+# System Prompts - 英文版
+# ============================================================
+OPTIMIST_SYSTEM_EN = """You are a persuasive "Optimist Debater".
+
+**IMPORTANT: You MUST respond in English only, regardless of the topic's language.**
+
+Rules:
+1. Keep responses to 2-3 sentences, short and powerful
+2. Emphasize opportunities, advantages, and positive impacts
+3. If challenged, respond with strong counter-arguments
+4. Never say "you're right" or "I agree" - no concessions
+5. **Always respond in English, even if the topic is in another language**
+6. **Use web_search_tool to find data or facts to support your arguments**
+
+Available tools:
+- web_search_tool(query: str): Search for latest information, statistics, or facts
+"""
+
+SKEPTIC_SYSTEM_EN = """You are a logical "Skeptic Debater".
+
+**IMPORTANT: You MUST respond in English only, regardless of the topic's language.**
+
+Rules:
+1. Keep responses to 2-3 sentences, hit the key points
+2. Point out risks, flaws, and overlooked costs
+3. Challenge opponent's optimistic assumptions, demand evidence
+4. Never agree with opponent's view, maintain critical stance
+5. **Always respond in English, even if the topic is in another language**
+6. **Use web_search_tool to verify opponent's claims**
+
+Available tools:
+- web_search_tool(query: str): Search for latest information to verify claims
+"""
+
+MODERATOR_ROUND_SUMMARY_EN = """You are a neutral debate moderator.
+
+**IMPORTANT: Respond in English only, even if the debate was in another language.**
+
+Please provide a brief summary of this round (80-120 words):
+
+Format:
+### 🔄 Round {round} Summary
+**Optimist**: [Core argument in 1 sentence]
+**Skeptic**: [Core argument in 1 sentence]
+**Key Disagreement**: [Main point of contention in 1 sentence]
+
+Rules:
+1. **Always respond in English**
+2. Remain absolutely neutral
+3. Be concise, no more than 120 words
+"""
+
+MODERATOR_FINAL_SUMMARY_EN = """You are a neutral, objective debate moderator.
+
+**IMPORTANT: Respond in English only, even if the debate was in another language.**
+
+Please generate a final summary report based on the complete debate (200-300 words):
+
+Format:
+## 📊 Debate Summary Report
+
+### 🟢 Optimist's Core Arguments
+- [Argument 1]
+- [Argument 2]
+
+### 🔴 Skeptic's Core Arguments
+- [Argument 1]
+- [Argument 2]
+
+### ⚖️ Key Points of Disagreement
+[What is the main disagreement between both sides? 1-2 sentences]
+
+### 💡 Overall Assessment
+[Objectively analyze the strengths and weaknesses of both sides' arguments, 2-3 sentences]
+
+### 🎯 Conclusion & Recommendation
+[Practical advice for the reader, 1 sentence]
+
+Rules:
+1. **Always respond in English**
+2. Remain neutral and objective
+3. Total word count 200-300 words
+"""
+
+
+# ============================================================
+# 取得對應語言的 Prompt
+# ============================================================
+def get_optimist_system() -> str:
+    logger.info(f"🌐 get_optimist_system: current_language={current_language}")
+    return OPTIMIST_SYSTEM_EN if current_language == "en" else OPTIMIST_SYSTEM_ZH
+
+def get_skeptic_system() -> str:
+    logger.info(f"🌐 get_skeptic_system: current_language={current_language}")
+    return SKEPTIC_SYSTEM_EN if current_language == "en" else SKEPTIC_SYSTEM_ZH
+
+def get_moderator_round_summary(round_num: int) -> str:
+    template = MODERATOR_ROUND_SUMMARY_EN if current_language == "en" else MODERATOR_ROUND_SUMMARY_ZH
+    return template.format(round=round_num)
+
+def get_moderator_final_summary() -> str:
+    return MODERATOR_FINAL_SUMMARY_EN if current_language == "en" else MODERATOR_FINAL_SUMMARY_ZH
+
+
+# ============================================================
 # 工具定義（Phase 3b/3c）
 # ============================================================
 
 @tool
 async def web_search_tool(query: str) -> str:
-    """搜尋網路資料以獲取最新資訊、統計數據或事實。
+    """Search the web for latest information, statistics, or facts.
 
-    當需要以下情況時使用此工具：
-    - 最新數據或統計資料
-    - 具體事件的日期和細節
-    - 科學研究結果
-    - 市場趨勢或商業資訊
+    Use this tool when you need:
+    - Latest data or statistics
+    - Specific event dates and details
+    - Scientific research results
+    - Market trends or business information
 
     Args:
-        query: 搜尋關鍵字（簡潔明確）
+        query: Search keywords (concise and clear)
 
     Returns:
-        格式化的搜尋結果摘要
+        Formatted search results summary
     """
     from app.tools.search import web_search
     
     logger.debug(f"web_search_tool called with query: {query}")
-    result = await web_search(query)
-    return result.get("formatted", "搜尋失敗")
+    result = await web_search(query, language=current_language)
+    
+    # 根據語言返回不同的錯誤訊息
+    fallback = "Search failed" if current_language == "en" else "搜尋失敗"
+    return result.get("formatted", fallback)
 
 
 # 工具列表（用於 ToolNode）
@@ -292,30 +414,60 @@ def format_messages(messages: List[BaseMessage], limit: int = 4) -> str:
         name = getattr(m, 'name', None) or m.__class__.__name__
         if hasattr(m, 'content') and m.content:
             lines.append(f"[{name}]: {m.content}")
-    return "\n".join(lines) if lines else "(尚無對話)"
+    
+    if lines:
+        return "\n".join(lines)
+    else:
+        return "(No conversation yet)" if current_language == "en" else "(尚無對話)"
 
 
 def build_prompt(state: DebateState, speaker: str) -> List[BaseMessage]:
     """為指定發言者建構 prompt（只用於首次調用）"""
     history = format_messages(state['messages'])
     round_num = state['round_count'] + 1
+    is_en = current_language == "en"
+    
+    # 語言指示（開頭和結尾）
+    lang_start = "*** RESPOND IN ENGLISH ONLY ***\n\n" if is_en else ""
+    lang_end = "\n\n*** IMPORTANT: Your response MUST be in English! ***" if is_en else ""
     
     if speaker == "optimist":
-        system = OPTIMIST_SYSTEM
+        system = get_optimist_system()
         if state['round_count'] == 0 and len(state['messages']) == 0:
-            user_content = f"""辯論主題：{state['topic']}
+            if is_en:
+                user_content = f"""{lang_start}Debate Topic: {state['topic']}
+
+Opening statement, please speak as the Optimist.{lang_end}"""
+            else:
+                user_content = f"""辯論主題：{state['topic']}
 
 開場白，請以樂觀者身份發言。"""
         else:
-            user_content = f"""辯論主題：{state['topic']}
+            if is_en:
+                user_content = f"""{lang_start}Debate Topic: {state['topic']}
+
+Round {round_num}, please speak as the Optimist.
+
+Conversation History:
+{history}{lang_end}"""
+            else:
+                user_content = f"""辯論主題：{state['topic']}
 
 第 {round_num} 輪，請以樂觀者身份發言。
 
 對話歷史：
 {history}"""
     else:  # skeptic
-        system = SKEPTIC_SYSTEM
-        user_content = f"""辯論主題：{state['topic']}
+        system = get_skeptic_system()
+        if is_en:
+            user_content = f"""{lang_start}Debate Topic: {state['topic']}
+
+Round {round_num}, please refute the Optimist's arguments as the Skeptic.
+
+Conversation History:
+{history}{lang_end}"""
+        else:
+            user_content = f"""辯論主題：{state['topic']}
 
 第 {round_num} 輪，請以懷疑者身份反駁樂觀者的論點。
 
@@ -383,28 +535,45 @@ async def optimist_node(state: DebateState) -> dict:
     llm = get_llm(bind_tools=should_bind_tools)
     logger.debug(f"optimist_node: tool_iterations={tool_iterations}, bind_tools={should_bind_tools}")
     
-    # 檢查是否從工具回調返回（messages 中有 ToolMessage）
     messages = state.get('messages', [])
     if messages and isinstance(messages[-1], ToolMessage):
         # 從工具返回：提取工具結果作為文字
+        is_en = current_language == "en"
         tool_results = []
         for msg in reversed(messages[-6:]):
             if isinstance(msg, ToolMessage):
-                tool_results.insert(0, f"[搜尋結果]: {msg.content}")
+                prefix = "[Search Result]: " if is_en else "[搜尋結果]: "
+                tool_results.insert(0, f"{prefix}{msg.content}")
         
         tool_context = "\n".join(tool_results) if tool_results else ""
         history = format_messages(messages)
         
-        prompt_messages = [
-            SystemMessage(content=OPTIMIST_SYSTEM),
-            HumanMessage(content=f"""辯論主題：{state['topic']}
+        if is_en:
+            user_prompt = f"""*** RESPOND IN ENGLISH ONLY ***
+
+Debate Topic: {state['topic']}
+
+{tool_context}
+
+Based on the search results above, please continue speaking as the Optimist. (Please respond directly without searching again)
+
+Conversation History:
+{history}
+
+*** IMPORTANT: Your response MUST be in English! ***"""
+        else:
+            user_prompt = f"""辯論主題：{state['topic']}
 
 {tool_context}
 
 請根據以上搜尋結果，以樂觀者身份繼續發言。（請直接發言，不要再搜尋）
 
 對話歷史：
-{history}""")
+{history}"""
+        
+        prompt_messages = [
+            SystemMessage(content=get_optimist_system()),
+            HumanMessage(content=user_prompt)
         ]
     else:
         # 首次調用
@@ -453,24 +622,42 @@ async def skeptic_node(state: DebateState) -> dict:
     messages = state.get('messages', [])
     if messages and isinstance(messages[-1], ToolMessage):
         # 從工具返回：提取工具結果作為文字
+        is_en = current_language == "en"
         tool_results = []
         for msg in reversed(messages[-6:]):
             if isinstance(msg, ToolMessage):
-                tool_results.insert(0, f"[搜尋結果]: {msg.content}")
+                prefix = "[Search Result]: " if is_en else "[搜尋結果]: "
+                tool_results.insert(0, f"{prefix}{msg.content}")
         
         tool_context = "\n".join(tool_results) if tool_results else ""
         history = format_messages(messages)
         
-        prompt_messages = [
-            SystemMessage(content=SKEPTIC_SYSTEM),
-            HumanMessage(content=f"""辯論主題：{state['topic']}
+        if is_en:
+            user_prompt = f"""*** RESPOND IN ENGLISH ONLY ***
+
+Debate Topic: {state['topic']}
+
+{tool_context}
+
+Based on the search results above, please continue refuting as the Skeptic. (Please respond directly without searching again)
+
+Conversation History:
+{history}
+
+*** IMPORTANT: Your response MUST be in English! ***"""
+        else:
+            user_prompt = f"""辯論主題：{state['topic']}
 
 {tool_context}
 
 請根據以上搜尋結果，以懷疑者身份繼續反駁。（請直接發言，不要再搜尋）
 
 對話歷史：
-{history}""")
+{history}"""
+        
+        prompt_messages = [
+            SystemMessage(content=get_skeptic_system()),
+            HumanMessage(content=user_prompt)
         ]
     else:
         prompt_messages = build_prompt(state, "skeptic")
@@ -557,16 +744,30 @@ async def moderator_node(state: DebateState) -> dict:
     is_final = (current_round >= max_rounds)
 
     # 選擇 Prompt
+    is_en = current_language == "en"
+    
     if is_final:
-        system_prompt = MODERATOR_FINAL_SUMMARY
-        prompt_context = f"""辯論主題：{state['topic']}
+        system_prompt = get_moderator_final_summary()
+        if is_en:
+            prompt_context = f"""*** RESPOND IN ENGLISH ONLY ***
+
+Debate Topic: {state['topic']}
+
+Complete Debate Record:
+{format_messages(state['messages'], limit=30)}
+
+Please generate the final summary report.
+
+*** IMPORTANT: Your response MUST be in English! ***"""
+        else:
+            prompt_context = f"""辯論主題：{state['topic']}
 
 完整辯論記錄：
 {format_messages(state['messages'], limit=30)}
 
 請生成最終總結報告。"""
     else:
-        system_prompt = MODERATOR_ROUND_SUMMARY.format(round=current_round)
+        system_prompt = get_moderator_round_summary(current_round)
 
         # ⚠️ 只提取本輪的 Optimist/Skeptic 對話（避免包含舊的 Moderator 總結）
         recent_debate_msgs = [
@@ -574,7 +775,19 @@ async def moderator_node(state: DebateState) -> dict:
             if getattr(m, 'name', None) in ("optimist", "skeptic")
         ]
 
-        prompt_context = f"""辯論主題：{state['topic']}
+        if is_en:
+            prompt_context = f"""*** RESPOND IN ENGLISH ONLY ***
+
+Debate Topic: {state['topic']}
+
+This Round's Dialogue:
+{format_messages(recent_debate_msgs, limit=6)}
+
+Please generate the Round {current_round} summary.
+
+*** IMPORTANT: Your response MUST be in English! ***"""
+        else:
+            prompt_context = f"""辯論主題：{state['topic']}
 
 本輪對話：
 {format_messages(recent_debate_msgs, limit=6)}

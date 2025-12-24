@@ -4,6 +4,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Rocket, Square } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 export interface TopicFormProps {
   topic: string;
@@ -27,6 +28,8 @@ export function TopicForm({
   onStart,
   onStop,
 }: TopicFormProps) {
+  const { t } = useI18n();
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isStreaming && topic.trim()) {
@@ -53,7 +56,7 @@ export function TopicForm({
             onChange={(e) => setTopic(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={isStreaming}
-            placeholder="輸入辯論主題，例如：AI 會取代人類工作嗎？"
+            placeholder={t("topicPlaceholder")}
           />
         </div>
 
@@ -61,20 +64,20 @@ export function TopicForm({
         {isStreaming ? (
           <Button type="button" variant="destructive" onClick={onStop}>
             <Square className="size-4" />
-            停止
+            {t("topicStop")}
           </Button>
         ) : (
           <Button type="submit" disabled={!topic.trim()}>
             <Rocket className="size-4" />
-            開始辯論
+            {t("topicStart")}
           </Button>
         )}
       </div>
 
       {/* 提示文字 */}
-      <p className="mt-3 text-center text-xs text-slate-500">
-        Powered by <span className="text-purple-400">LangGraph 1.0</span> &{" "}
-        <span className="text-blue-400">Groq</span> • Phase 1 測試版
+      <p className="mt-3 text-center text-xs text-slate-500 dark:text-slate-500">
+        {t("topicPoweredBy")} <span className="text-purple-600 dark:text-purple-400">LangGraph 1.0</span> &{" "}
+        <span className="text-blue-600 dark:text-blue-400">Groq</span> {t("topicTestVersion")}
       </p>
     </form>
   );

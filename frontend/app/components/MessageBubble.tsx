@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useI18n } from "@/lib/i18n";
 
 export interface MessageBubbleProps {
   node: "optimist" | "skeptic" | "moderator" | "system";
@@ -27,36 +28,38 @@ export function MessageBubble({
   isTyping = false,
   roundInfo,
 }: MessageBubbleProps) {
+  const { t } = useI18n();
+
   // 角色配置
   const roleConfig = {
     optimist: {
       emoji: "🤖",
-      label: "樂觀者",
+      labelKey: "roleOptimist" as const,
       containerClass: "mr-16",
-      cardClass: "bg-emerald-950/40 border-emerald-500/30",
-      textClass: "text-emerald-100",
+      cardClass: "bg-emerald-100/60 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-500/30",
+      textClass: "text-emerald-800 dark:text-emerald-100",
     },
     skeptic: {
       emoji: "🧐",
-      label: "懷疑者",
+      labelKey: "roleSkeptic" as const,
       containerClass: "ml-16",
-      cardClass: "bg-rose-950/40 border-rose-500/30",
-      textClass: "text-rose-100",
+      cardClass: "bg-rose-100/60 dark:bg-rose-950/40 border-rose-300 dark:border-rose-500/30",
+      textClass: "text-rose-800 dark:text-rose-100",
     },
     // Phase 3d: 新增 moderator 配置（藍色主題，置中且稍寬）
     moderator: {
       emoji: "⚖️",
-      label: "主持人",
+      labelKey: "roleModerator" as const,
       containerClass: "mx-auto max-w-3xl",
-      cardClass: "bg-blue-950/40 border-blue-500/30",
-      textClass: "text-blue-100",
+      cardClass: "bg-blue-100/60 dark:bg-blue-950/40 border-blue-300 dark:border-blue-500/30",
+      textClass: "text-blue-800 dark:text-blue-100",
     },
     system: {
       emoji: "📢",
-      label: "系統",
+      labelKey: "roleSystem" as const,
       containerClass: "mx-auto max-w-md",
-      cardClass: "bg-slate-800/50 border-slate-600/30",
-      textClass: "text-slate-300",
+      cardClass: "bg-slate-100/60 dark:bg-slate-800/50 border-slate-300 dark:border-slate-600/30",
+      textClass: "text-slate-700 dark:text-slate-300",
     },
   };
 
@@ -69,25 +72,25 @@ export function MessageBubble({
         <div
           className={cn(
             config.textClass,
-            "prose prose-invert prose-sm max-w-none"
+            "prose prose-slate dark:prose-invert prose-sm max-w-none"
           )}
         >
           <ReactMarkdown
             components={{
               // 自定義標題樣式
               h2: ({ children }) => (
-                <h2 className="text-lg font-bold text-blue-200 mt-4 mb-2 border-b border-blue-500/30 pb-1">
+                <h2 className="text-lg font-bold text-blue-700 dark:text-blue-200 mt-4 mb-2 border-b border-blue-300 dark:border-blue-500/30 pb-1">
                   {children}
                 </h2>
               ),
               h3: ({ children }) => (
-                <h3 className="text-base font-semibold text-blue-300 mt-3 mb-1">
+                <h3 className="text-base font-semibold text-blue-600 dark:text-blue-300 mt-3 mb-1">
                   {children}
                 </h3>
               ),
               // 粗體
               strong: ({ children }) => (
-                <strong className="font-bold text-blue-100">{children}</strong>
+                <strong className="font-bold text-blue-700 dark:text-blue-100">{children}</strong>
               ),
               // 列表
               ul: ({ children }) => (
@@ -96,11 +99,11 @@ export function MessageBubble({
                 </ul>
               ),
               li: ({ children }) => (
-                <li className="text-blue-100/90">{children}</li>
+                <li className="text-blue-700/90 dark:text-blue-100/90">{children}</li>
               ),
               // 段落
               p: ({ children }) => (
-                <p className="text-blue-100/90 leading-relaxed my-2">
+                <p className="text-blue-700/90 dark:text-blue-100/90 leading-relaxed my-2">
                   {children}
                 </p>
               ),
@@ -144,13 +147,13 @@ export function MessageBubble({
           <div className="flex items-center gap-2 mb-2">
             <Badge variant={node}>
               <span>{config.emoji}</span>
-              <span>{config.label}</span>
+              <span>{t(config.labelKey)}</span>
             </Badge>
             {roundInfo && (
               <span className="text-xs text-slate-500">• {roundInfo}</span>
             )}
             {isTyping && (
-              <span className="text-xs text-slate-500">正在輸入...</span>
+              <span className="text-xs text-slate-500">{t("isTyping")}</span>
             )}
           </div>
 

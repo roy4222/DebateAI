@@ -26,44 +26,53 @@ import {
 } from "@/components/ui/sidebar";
 import { getRecentDebates } from "@/app/lib/api";
 import { useDebateHistory } from "@/contexts/DebateHistoryContext";
+import { useI18n } from "@/lib/i18n";
 
 // 導航項目
 const menuItems = [
   {
-    title: "辯論",
+    titleKey: "navDebate" as const,
     url: "/",
     icon: Swords,
   },
   {
-    title: "歷史紀錄",
+    titleKey: "navHistory" as const,
     url: "/history",
     icon: History,
   },
   {
-    title: "關於我們",
+    titleKey: "navAbout" as const,
     url: "/about",
     icon: Info,
   },
   {
-    title: "價格方案",
+    titleKey: "navPricing" as const,
     url: "/pricing",
     icon: CreditCard,
   },
   {
-    title: "設定",
+    titleKey: "navSettings" as const,
     url: "/settings",
     icon: Settings,
   },
 ];
 
 // 格式化相對時間
-function formatRelativeTime(dateString: string): string {
+function formatRelativeTime(dateString: string, locale: string): string {
   const date = new Date(dateString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / (1000 * 60));
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (locale === "en") {
+    if (diffMins < 1) return "just now";
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return `${diffHours} hr ago`;
+    if (diffDays < 7) return `${diffDays} day ago`;
+    return date.toLocaleDateString("en-US");
+  }
 
   if (diffMins < 1) return "剛剛";
   if (diffMins < 60) return `${diffMins} 分鐘前`;
@@ -75,6 +84,7 @@ function formatRelativeTime(dateString: string): string {
 export function AppSidebar() {
   const pathname = usePathname();
   const { recentDebates, setRecentDebates } = useDebateHistory();
+  const { t, locale } = useI18n();
 
   // 初次載入時取得最近辯論
   useEffect(() => {
@@ -91,9 +101,9 @@ export function AppSidebar() {
   }, [setRecentDebates]);
 
   return (
-    <Sidebar className="border-r border-slate-800/50">
+    <Sidebar className="border-r border-slate-200 dark:border-slate-800/50">
       {/* Sidebar Header */}
-      <SidebarHeader className="border-b border-slate-800/50 p-4">
+      <SidebarHeader className="border-b border-slate-200 dark:border-slate-800/50 p-4">
         <Link
           href="/"
           className="flex items-center gap-3 hover:opacity-80 transition-opacity"
@@ -105,7 +115,9 @@ export function AppSidebar() {
             <h1 className="text-lg font-bold bg-gradient-to-r from-purple-400 via-pink-500 to-blue-400 bg-clip-text text-transparent">
               DebateAI
             </h1>
-            <p className="text-xs text-slate-500">Multi-Agent 辯論平台</p>
+            <p className="text-xs text-slate-500 dark:text-slate-500">
+              {t("sidebarSubtitle")}
+            </p>
           </div>
         </Link>
       </SidebarHeader>
@@ -114,19 +126,21 @@ export function AppSidebar() {
       <SidebarContent>
         {/* 導覽區 */}
         <SidebarGroup>
-          <SidebarGroupLabel className="text-slate-400">導覽</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-slate-500 dark:text-slate-400">
+            {t("sidebarNav")}
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {menuItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
+                <SidebarMenuItem key={item.titleKey}>
                   <SidebarMenuButton
                     asChild
                     isActive={pathname === item.url}
-                    className="hover:bg-slate-800/50"
+                    className="hover:bg-slate-100 dark:hover:bg-slate-800/50"
                   >
                     <Link href={item.url}>
                       <item.icon className="size-4" />
-                      <span>{item.title}</span>
+                      <span>{t(item.titleKey)}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -137,13 +151,15 @@ export function AppSidebar() {
 
         {/* 最近辯論區 (Google AI Studio 風格) */}
         <SidebarGroup className="mt-2">
-          <SidebarGroupLabel className="text-slate-400 flex items-center gap-2">
+          <SidebarGroupLabel className="text-slate-500 dark:text-slate-400 flex items-center gap-2">
             <Clock className="size-3" />
-            最近辯論
+            {t("sidebarRecentDebates")}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             {recentDebates.length === 0 ? (
-              <p className="text-xs text-slate-500 px-3 py-2">尚無辯論記錄</p>
+              <p className="text-xs text-slate-500 px-3 py-2">
+                {t("sidebarNoDebates")}
+              </p>
             ) : (
               <SidebarMenu>
                 {recentDebates.map((debate) => (
@@ -158,7 +174,7 @@ export function AppSidebar() {
                             ) === debate.id
                           : false)
                       }
-                      className="hover:bg-slate-800/50"
+                      className="hover:bg-slate-100 dark:hover:bg-slate-800/50"
                     >
                       <Link href={`/history?id=${debate.id}`}>
                         <div className="flex flex-col items-start w-full min-w-0">
@@ -168,8 +184,9 @@ export function AppSidebar() {
                               : debate.topic}
                           </span>
                           <span className="text-xs text-slate-500">
-                            {formatRelativeTime(debate.created_at)} •{" "}
-                            {debate.rounds_completed} 輪
+                            {formatRelativeTime(debate.created_at, locale)} •{" "}
+                            {debate.rounds_completed}{" "}
+                            {locale === "en" ? "rounds" : "輪"}
                           </span>
                         </div>
                       </Link>
@@ -181,10 +198,10 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
-                    className="hover:bg-slate-800/50 text-purple-400 hover:text-purple-300"
+                    className="hover:bg-slate-100 dark:hover:bg-slate-800/50 text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300"
                   >
                     <Link href="/history" className="flex items-center gap-1">
-                      <span>查看所有紀錄</span>
+                      <span>{t("sidebarViewAll")}</span>
                       <ArrowRight className="size-3" />
                     </Link>
                   </SidebarMenuButton>
@@ -196,8 +213,10 @@ export function AppSidebar() {
       </SidebarContent>
 
       {/* Sidebar Footer */}
-      <SidebarFooter className="border-t border-slate-800/50 p-4">
-        <p className="text-xs text-slate-500 text-center">v0.4.0 • Phase 4</p>
+      <SidebarFooter className="border-t border-slate-200 dark:border-slate-800/50 p-4">
+        <p className="text-xs text-slate-500 dark:text-slate-500 text-center">
+          v0.4.0 • Phase 4
+        </p>
       </SidebarFooter>
     </Sidebar>
   );

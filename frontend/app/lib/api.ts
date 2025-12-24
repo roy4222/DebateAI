@@ -17,6 +17,7 @@ export type SSEEvent =
 export interface DebateRequest {
     topic: string;
     max_rounds?: number;
+    language?: string;  // "zh" 或 "en"
 }
 
 // API URL（從環境變數讀取）
@@ -35,13 +36,13 @@ export async function streamDebate(
     onEvent: (event: SSEEvent) => void,
     abortSignal?: AbortSignal
 ): Promise<void> {
-    const { topic, max_rounds = 3 } = request;
+    const { topic, max_rounds = 3, language = "zh" } = request;
 
     try {
         const response = await fetch(`${API_URL}/debate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ topic, max_rounds }),
+            body: JSON.stringify({ topic, max_rounds, language }),
             signal: abortSignal,
         });
 
