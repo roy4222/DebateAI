@@ -97,12 +97,14 @@ export async function streamDebate(
     } catch (error) {
         if (error instanceof Error) {
             if (error.name === 'AbortError') {
-                onEvent({ type: 'status', text: '🛑 辯論已停止' });
+                const msg = language === 'en' ? '🛑 Debate stopped' : '🛑 辯論已停止';
+                onEvent({ type: 'status', text: msg });
             } else {
                 onEvent({ type: 'error', text: error.message });
             }
         } else {
-            onEvent({ type: 'error', text: '未知錯誤' });
+            const msg = language === 'en' ? 'Unknown error' : '未知錯誤';
+            onEvent({ type: 'error', text: msg });
         }
         throw error;
     }

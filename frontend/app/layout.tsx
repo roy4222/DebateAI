@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { cookies } from "next/headers";
 import "./globals.css";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -22,13 +23,18 @@ export const metadata: Metadata = {
   description: "讓 AI 辯手針對各種議題進行深度辯論",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // 從 cookie 讀取語言設定（SSR）
+  const cookieStore = await cookies();
+  const savedLocale = cookieStore.get('debate-language')?.value;
+  const htmlLang = savedLocale === 'en' ? 'en' : 'zh-TW';
+
   return (
-    <html lang="zh-TW" suppressHydrationWarning>
+    <html lang={htmlLang} suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

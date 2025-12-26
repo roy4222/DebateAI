@@ -36,22 +36,7 @@ class DebateState(TypedDict):
     max_rounds: int
     tool_iterations: int  # Phase 3c: 工具迭代計數器
     last_agent: Literal["optimist", "skeptic", ""]  # Phase 3c: 記錄上一個 Agent
-
-
-# ============================================================
-# 語言設定
-# ============================================================
-current_language = "zh"  # 預設繁體中文
-
-def set_language(lang: str):
-    """設定語言：'zh' (繁體中文) 或 'en' (English)"""
-    global current_language
-    current_language = lang if lang in ("zh", "en") else "zh"
-    logger.info(f"🌐 Language set to: {current_language}")
-
-def get_language() -> str:
-    """取得當前語言設定"""
-    return current_language
+    language: str  # Phase 4: 語言設定 ("zh" 或 "en")
 
 
 # ============================================================
@@ -219,20 +204,20 @@ Rules:
 # ============================================================
 # 取得對應語言的 Prompt
 # ============================================================
-def get_optimist_system() -> str:
-    logger.info(f"🌐 get_optimist_system: current_language={current_language}")
-    return OPTIMIST_SYSTEM_EN if current_language == "en" else OPTIMIST_SYSTEM_ZH
+def get_optimist_system(language: str) -> str:
+    logger.debug(f"🌐 get_optimist_system: language={language}")
+    return OPTIMIST_SYSTEM_EN if language == "en" else OPTIMIST_SYSTEM_ZH
 
-def get_skeptic_system() -> str:
-    logger.info(f"🌐 get_skeptic_system: current_language={current_language}")
-    return SKEPTIC_SYSTEM_EN if current_language == "en" else SKEPTIC_SYSTEM_ZH
+def get_skeptic_system(language: str) -> str:
+    logger.debug(f"🌐 get_skeptic_system: language={language}")
+    return SKEPTIC_SYSTEM_EN if language == "en" else SKEPTIC_SYSTEM_ZH
 
-def get_moderator_round_summary(round_num: int) -> str:
-    template = MODERATOR_ROUND_SUMMARY_EN if current_language == "en" else MODERATOR_ROUND_SUMMARY_ZH
+def get_moderator_round_summary(round_num: int, language: str) -> str:
+    template = MODERATOR_ROUND_SUMMARY_EN if language == "en" else MODERATOR_ROUND_SUMMARY_ZH
     return template.format(round=round_num)
 
-def get_moderator_final_summary() -> str:
-    return MODERATOR_FINAL_SUMMARY_EN if current_language == "en" else MODERATOR_FINAL_SUMMARY_ZH
+def get_moderator_final_summary(language: str) -> str:
+    return MODERATOR_FINAL_SUMMARY_EN if language == "en" else MODERATOR_FINAL_SUMMARY_ZH
 
 
 # ============================================================
@@ -256,12 +241,18 @@ async def web_search_tool(query: str) -> str:
         Formatted search results summary
     """
     from app.tools.search import web_search
-    
+
     logger.debug(f"web_search_tool called with query: {query}")
-    result = await web_search(query, language=current_language)
-    
-    # 根據語言返回不同的錯誤訊息
-    fallback = "Search failed" if current_language == "en" else "搜尋失敗"
+    # 由於 @tool 無法存取 state，搜尋工具會根據 query 語言自動判斷
+    # 使用簡單的啟發式：如果 query 包含中文字元則用 zh，否則用 en
+    import re
+    has_chinese = bool(re.search(r'[\u4e00-\u9fff]', query))
+    language = 'zh' if has_chinese else 'en'
+
+    result = await web_search(query, language=language)
+
+    # 根據偵測到的語言返回不同的錯誤訊息
+    fallback = "Search failed" if language == "en" else "搜尋失敗"
     return result.get("formatted", fallback)
 
 
@@ -418,21 +409,23 @@ def format_messages(messages: List[BaseMessage], limit: int = 4) -> str:
     if lines:
         return "\n".join(lines)
     else:
-        return "(No conversation yet)" if current_language == "en" else "(尚無對話)"
+        # 無法從這裡存取 language，使用預設中文（會被 build_prompt 覆蓋）
+        return "(尚無對話)"
 
 
 def build_prompt(state: DebateState, speaker: str) -> List[BaseMessage]:
     """為指定發言者建構 prompt（只用於首次調用）"""
     history = format_messages(state['messages'])
     round_num = state['round_count'] + 1
-    is_en = current_language == "en"
-    
+    language = state.get('language', 'zh')
+    is_en = language == "en"
+
     # 語言指示（開頭和結尾）
     lang_start = "*** RESPOND IN ENGLISH ONLY ***\n\n" if is_en else ""
     lang_end = "\n\n*** IMPORTANT: Your response MUST be in English! ***" if is_en else ""
-    
+
     if speaker == "optimist":
-        system = get_optimist_system()
+        system = get_optimist_system(language)
         if state['round_count'] == 0 and len(state['messages']) == 0:
             if is_en:
                 user_content = f"""{lang_start}Debate Topic: {state['topic']}
@@ -458,7 +451,7 @@ Conversation History:
 對話歷史：
 {history}"""
     else:  # skeptic
-        system = get_skeptic_system()
+        system = get_skeptic_system(language)
         if is_en:
             user_content = f"""{lang_start}Debate Topic: {state['topic']}
 
@@ -501,8 +494,8 @@ def update_state_after_speaker(state: DebateState, speaker: str, content: str) -
         }
 
 
-def create_initial_state(topic: str, max_rounds: int = 3) -> DebateState:
-    """建立初始狀態（Phase 3c）"""
+def create_initial_state(topic: str, max_rounds: int = 3, language: str = "zh") -> DebateState:
+    """建立初始狀態（Phase 3c/4）"""
     return {
         "messages": [],
         "topic": topic,
@@ -510,7 +503,8 @@ def create_initial_state(topic: str, max_rounds: int = 3) -> DebateState:
         "round_count": 0,
         "max_rounds": max_rounds,
         "tool_iterations": 0,
-        "last_agent": ""
+        "last_agent": "",
+        "language": language
     }
 
 
@@ -538,16 +532,17 @@ async def optimist_node(state: DebateState) -> dict:
     messages = state.get('messages', [])
     if messages and isinstance(messages[-1], ToolMessage):
         # 從工具返回：提取工具結果作為文字
-        is_en = current_language == "en"
+        language = state.get('language', 'zh')
+        is_en = language == "en"
         tool_results = []
         for msg in reversed(messages[-6:]):
             if isinstance(msg, ToolMessage):
                 prefix = "[Search Result]: " if is_en else "[搜尋結果]: "
                 tool_results.insert(0, f"{prefix}{msg.content}")
-        
+
         tool_context = "\n".join(tool_results) if tool_results else ""
         history = format_messages(messages)
-        
+
         if is_en:
             user_prompt = f"""*** RESPOND IN ENGLISH ONLY ***
 
@@ -570,9 +565,9 @@ Conversation History:
 
 對話歷史：
 {history}"""
-        
+
         prompt_messages = [
-            SystemMessage(content=get_optimist_system()),
+            SystemMessage(content=get_optimist_system(language)),
             HumanMessage(content=user_prompt)
         ]
     else:
@@ -622,16 +617,17 @@ async def skeptic_node(state: DebateState) -> dict:
     messages = state.get('messages', [])
     if messages and isinstance(messages[-1], ToolMessage):
         # 從工具返回：提取工具結果作為文字
-        is_en = current_language == "en"
+        language = state.get('language', 'zh')
+        is_en = language == "en"
         tool_results = []
         for msg in reversed(messages[-6:]):
             if isinstance(msg, ToolMessage):
                 prefix = "[Search Result]: " if is_en else "[搜尋結果]: "
                 tool_results.insert(0, f"{prefix}{msg.content}")
-        
+
         tool_context = "\n".join(tool_results) if tool_results else ""
         history = format_messages(messages)
-        
+
         if is_en:
             user_prompt = f"""*** RESPOND IN ENGLISH ONLY ***
 
@@ -654,9 +650,9 @@ Conversation History:
 
 對話歷史：
 {history}"""
-        
+
         prompt_messages = [
-            SystemMessage(content=get_skeptic_system()),
+            SystemMessage(content=get_skeptic_system(language)),
             HumanMessage(content=user_prompt)
         ]
     else:
@@ -744,10 +740,11 @@ async def moderator_node(state: DebateState) -> dict:
     is_final = (current_round >= max_rounds)
 
     # 選擇 Prompt
-    is_en = current_language == "en"
-    
+    language = state.get('language', 'zh')
+    is_en = language == "en"
+
     if is_final:
-        system_prompt = get_moderator_final_summary()
+        system_prompt = get_moderator_final_summary(language)
         if is_en:
             prompt_context = f"""*** RESPOND IN ENGLISH ONLY ***
 
@@ -767,7 +764,7 @@ Please generate the final summary report.
 
 請生成最終總結報告。"""
     else:
-        system_prompt = get_moderator_round_summary(current_round)
+        system_prompt = get_moderator_round_summary(current_round, language)
 
         # ⚠️ 只提取本輪的 Optimist/Skeptic 對話（避免包含舊的 Moderator 總結）
         recent_debate_msgs = [
