@@ -2,7 +2,7 @@
 
 ## 📋 今日目標
 
-Groq API 限流容錯機制 + 繼續完成待辦事項
+Groq API 限流容錯機制 + Testing + CI/CD 完整實作
 
 ---
 
@@ -24,77 +24,106 @@ DEFAULT_FALLBACK_MODELS = [
 ]
 ```
 
-**環境變數支援：**
+### 2. Testing Infrastructure ✅
 
-```bash
-GROQ_MODEL=openai/gpt-oss-120b          # 主要模型
-GROQ_FALLBACK_MODELS=kimi-k2,llama-3.1  # 可自訂備用模型（逗號分隔）
-```
+#### Backend pytest（53 個測試全部通過）
 
-### 2. Testing Infrastructure（新增）
+| 測試檔案          | 測試數 | 測試內容                            |
+| ----------------- | ------ | ----------------------------------- |
+| `test_graph.py`   | 14     | LangGraph 狀態、Rate Limit 重試機制 |
+| `test_main.py`    | 15     | FastAPI API 端點、CORS 設定         |
+| `test_service.py` | 17     | Supabase CRUD、訊息序列化           |
+| `test_search.py`  | 7      | 搜尋工具容錯、優雅降級              |
 
-- ✅ **Backend pytest** - 53 個測試全部通過
+#### Frontend Vitest（13 個測試全部通過）
 
-  - `pytest.ini` + `.coveragerc`
-  - `tests/conftest.py` (Mock fixtures)
-  - `tests/test_service.py` (17 tests)
-  - `tests/test_main.py` (15 tests)
-  - `tests/test_graph.py` (14 tests)
-  - `tests/test_search.py` (7 tests)
+| 測試檔案      | 測試數 | 測試內容                 |
+| ------------- | ------ | ------------------------ |
+| `api.test.ts` | 13     | API 客戶端、SSE 串流處理 |
 
-- ✅ **Frontend Vitest** - 13 個測試全部通過
-  - `vitest.config.ts` + `vitest.setup.ts`
-  - `app/lib/__tests__/api.test.ts` (13 tests)
+### 3. GitHub Actions CI/CD ✅ 驗證成功
 
-### 3. GitHub Actions CI/CD（新增）
+- ✅ `.github/workflows/backend-test.yml` - Backend 測試
+- ✅ `.github/workflows/frontend-test.yml` - Frontend 測試
+- ✅ `.github/workflows/ci-cd.yml` - 整合 pipeline
 
-- ✅ `.github/workflows/backend-test.yml`
-- ✅ `.github/workflows/frontend-test.yml`
-- ✅ `.github/workflows/ci-cd.yml` (整合 pipeline，部署暫時註解)
+**CI 執行結果**：
 
-### 4. 關鍵設計決策
+- Backend: 53 passed, 覆蓋率 55%（門檻 50%）
+- Frontend: 13 passed
+- 執行時間: ~20 秒
 
-| 決策          | 選擇                   | 理由               |
-| :------------ | :--------------------- | :----------------- |
-| 限流容錯      | 類級別 cooldown set    | 跨請求共享限流狀態 |
-| 模型切換      | 立即切換，無需等 7 秒  | 提升用戶體驗       |
-| Fallback 模型 | Kimi K2 + llama-3.1-8b | 品質與配額平衡     |
+### 4. Code Review 修復
+
+- ✅ `max_rounds` 驗證（限制 1-5 輪）
+- ✅ `topic` 長度限制（最多 200 字）
+- ✅ `AppSidebar` SSR window 檢查
+
+### 5. 覆蓋率報告
+
+| 檔案                 | 覆蓋率  | 說明                 |
+| -------------------- | ------- | -------------------- |
+| `debate_service.py`  | 84%     | ✅ 高覆蓋            |
+| `search.py`          | 79%     | ✅ 高覆蓋            |
+| `supabase_client.py` | 57%     | 部分覆蓋             |
+| `main.py`            | 52%     | SSE 串流未測試       |
+| `graph.py`           | 45%     | LangGraph 節點未測試 |
+| **總計**             | **55%** | 超過 50% 門檻 ✅     |
 
 ---
 
 ## 📁 檔案變更總覽
 
-### Backend (修改)
+### Backend
 
 ```
 backend/
 ├── app/
-│   └── graph.py              # [MODIFIED] 新增 RateLimitRetryLLM 類別
+│   ├── graph.py              # [MODIFIED] RateLimitRetryLLM
+│   └── main.py               # [MODIFIED] DebateRequest 驗證
+├── tests/
+│   ├── __init__.py           # [NEW]
+│   ├── conftest.py           # [NEW] pytest fixtures
+│   ├── test_graph.py         # [NEW] 14 tests
+│   ├── test_main.py          # [NEW] 15 tests
+│   ├── test_service.py       # [NEW] 17 tests
+│   └── test_search.py        # [NEW] 7 tests
+├── pytest.ini                # [NEW] pytest 設定
+└── .coveragerc               # [NEW] 覆蓋率設定
+```
+
+### Frontend
+
+```
+frontend/
+├── app/lib/__tests__/
+│   └── api.test.ts           # [NEW] 13 tests
+├── components/
+│   └── app-sidebar.tsx       # [MODIFIED] SSR 修復
+├── vitest.config.ts          # [NEW]
+└── vitest.setup.ts           # [NEW]
+```
+
+### GitHub Actions
+
+```
+.github/workflows/
+├── backend-test.yml          # [NEW]
+├── frontend-test.yml         # [NEW]
+└── ci-cd.yml                 # [NEW]
 ```
 
 ---
 
 ## 🔜 待辦事項
 
-### Testing + CI/CD（延續 12-22）
+### 中優先級
 
-- [ ] Backend 測試 (pytest)
-  - [ ] `tests/conftest.py` - Mock Supabase
-  - [ ] `tests/test_service.py` - debate_service 單元測試
-  - [ ] `tests/test_main.py` - API 整合測試
-- [ ] Frontend 測試 (Vitest)
-  - [ ] `__tests__/lib/api.test.ts`
-  - [ ] `__tests__/components/*.test.tsx`
-- [ ] GitHub Actions
-  - [ ] `.github/workflows/test.yml`
+- [ ] 補充 Frontend 組件測試（DebateUI, TopicForm）
+- [ ] 提高覆蓋率到 70%
+- [ ] 設定 GitHub Secrets 啟用自動部署
 
-### 部署（延續 12-22）
+### 低優先級
 
-- [ ] 更新 Cloud Run 後端 (含新 API + 限流容錯)
-- [ ] 更新 Cloudflare Pages 前端
-- [ ] 設定生產環境 Supabase 環境變數
-
-### 其他優化
-
-- [ ] 添加模型切換的 SSE 事件通知（讓前端顯示當前使用的模型）
+- [ ] Supabase 安全性（anon key + RLS）
 - [ ] 監控 Groq API 使用量統計
