@@ -1,0 +1,80 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.11
+      - run: uv sync --extra test
+        working-directory: backend
+      - run: uv run pytest --cov --cov-fail-under=80
+        working-directory: backend
+
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run test:run
+        working-directory: frontend
+
+  # Deployment jobs (only on main branch push)
+  # Uncomment when secrets are configured
+
+  # deploy-backend:
+  #   name: Deploy Backend
+  #   needs: [backend-test]
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: google-github-actions/auth@v2
+  #       with:
+  #         credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+  #     - uses: google-github-actions/setup-gcloud@v2
+  #     - run: |
+  #         gcloud run deploy debate-api \
+  #           --source . \
+  #           --region asia-east1 \
+  #           --set-env-vars GROQ_API_KEY=${{ secrets.GROQ_API_KEY }} \
+  #           --memory 512Mi
+  #       working-directory: backend
+
+  # deploy-frontend:
+  #   name: Deploy Frontend
+  #   needs: [frontend-test]
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #     - run: npm ci
+  #       working-directory: frontend
+  #     - run: npm run build
+  #       working-directory: frontend
+  #       env:
+  #         NEXT_PUBLIC_API_URL: https://debate-api-1046434677262.asia-east1.run.app
+  #     - uses: cloudflare/pages-action@v1
+  #       with:
+  #         apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  #         accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  #         projectName: debate-ai
+  #         directory: frontend/out

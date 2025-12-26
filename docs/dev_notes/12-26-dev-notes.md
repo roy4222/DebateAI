@@ -31,7 +31,28 @@ GROQ_MODEL=openai/gpt-oss-120b          # 主要模型
 GROQ_FALLBACK_MODELS=kimi-k2,llama-3.1  # 可自訂備用模型（逗號分隔）
 ```
 
-### 2. 關鍵設計決策
+### 2. Testing Infrastructure（新增）
+
+- ✅ **Backend pytest** - 53 個測試全部通過
+
+  - `pytest.ini` + `.coveragerc`
+  - `tests/conftest.py` (Mock fixtures)
+  - `tests/test_service.py` (17 tests)
+  - `tests/test_main.py` (15 tests)
+  - `tests/test_graph.py` (14 tests)
+  - `tests/test_search.py` (7 tests)
+
+- ✅ **Frontend Vitest** - 13 個測試全部通過
+  - `vitest.config.ts` + `vitest.setup.ts`
+  - `app/lib/__tests__/api.test.ts` (13 tests)
+
+### 3. GitHub Actions CI/CD（新增）
+
+- ✅ `.github/workflows/backend-test.yml`
+- ✅ `.github/workflows/frontend-test.yml`
+- ✅ `.github/workflows/ci-cd.yml` (整合 pipeline，部署暫時註解)
+
+### 4. 關鍵設計決策
 
 | 決策          | 選擇                   | 理由               |
 | :------------ | :--------------------- | :----------------- |

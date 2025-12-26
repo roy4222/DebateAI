@@ -74,9 +74,11 @@ app.add_middleware(
 # ============================================================
 # 請求模型
 # ============================================================
+from pydantic import Field
+
 class DebateRequest(BaseModel):
-    topic: str
-    max_rounds: int = 3
+    topic: str = Field(..., min_length=1, max_length=200, description="辯論主題，最多 200 字")
+    max_rounds: int = Field(default=3, ge=1, le=5, description="辯論輪數，1-5 輪")
 
 
 # ============================================================

@@ -3,7 +3,15 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Swords, Info, CreditCard, Settings, History, Clock, ArrowRight } from "lucide-react";
+import {
+  Swords,
+  Info,
+  CreditCard,
+  Settings,
+  History,
+  Clock,
+  ArrowRight,
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -142,7 +150,14 @@ export function AppSidebar() {
                   <SidebarMenuItem key={debate.id}>
                     <SidebarMenuButton
                       asChild
-                      isActive={pathname === "/history" && new URLSearchParams(window?.location?.search || "").get("id") === debate.id}
+                      isActive={
+                        pathname === "/history" &&
+                        (typeof window !== "undefined"
+                          ? new URLSearchParams(window.location.search).get(
+                              "id"
+                            ) === debate.id
+                          : false)
+                      }
                       className="hover:bg-slate-800/50"
                     >
                       <Link href={`/history?id=${debate.id}`}>
@@ -153,7 +168,8 @@ export function AppSidebar() {
                               : debate.topic}
                           </span>
                           <span className="text-xs text-slate-500">
-                            {formatRelativeTime(debate.created_at)} • {debate.rounds_completed} 輪
+                            {formatRelativeTime(debate.created_at)} •{" "}
+                            {debate.rounds_completed} 輪
                           </span>
                         </div>
                       </Link>
