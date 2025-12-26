@@ -271,112 +271,32 @@ DEFAULT_FALLBACK_MODELS = [
 ]
 
 
-class RateLimitRetryLLM:
-    """LLM 包裝器：遇到 429 限流時自動切換模型
-    
-    特點：
-    - 維護一個「已限流」模型集合（cooldown_models）
-    - 遇到 429 時，將當前模型加入 cooldown，切換到下一個可用模型重試
-    - 所有模型都限流時，等待 retry-after 秒後重試主模型
-    """
-    
-    # 類級別變數：追蹤全局限流狀態
-    cooldown_models: set = set()
-    
-    def __init__(self, primary_model: str, fallback_models: list, bind_tools: bool = False):
-        self.primary_model = primary_model
-        self.fallback_models = fallback_models
-        self.bind_tools = bind_tools
-        self.api_key = os.getenv("GROQ_API_KEY")
-        self._current_model = primary_model
-        self._tools = tools if bind_tools else None
-    
-    def _get_available_model(self) -> str:
-        """取得目前可用的模型（排除已限流的）"""
-        all_models = [self.primary_model] + self.fallback_models
-        for model in all_models:
-            if model not in RateLimitRetryLLM.cooldown_models:
-                return model
-        # 所有模型都限流，返回主模型（會觸發等待）
-        logger.warning("All models in cooldown, resetting and using primary model")
-        RateLimitRetryLLM.cooldown_models.clear()
-        return self.primary_model
-    
-    def _create_llm(self, model_name: str):
-        """建立 ChatGroq 實例"""
-        llm = ChatGroq(
-            model=model_name,
-            temperature=0.7,
-            api_key=self.api_key,
-            streaming=True
-        )
-        if self._tools:
-            return llm.bind_tools(self._tools)
-        return llm
-    
-    async def ainvoke(self, messages, **kwargs):
-        """異步調用 LLM，遇到限流自動切換模型"""
-        import asyncio
-        
-        max_retries = len(self.fallback_models) + 2  # 嘗試所有模型 + 額外重試
-        last_error = None
-        
-        for attempt in range(max_retries):
-            current_model = self._get_available_model()
-            llm = self._create_llm(current_model)
-            
-            try:
-                logger.debug(f"RateLimitRetryLLM: attempt {attempt + 1}, model={current_model}")
-                response = await llm.ainvoke(messages, **kwargs)
-                
-                # 成功後，從 cooldown 移除此模型（如果之前被加入）
-                RateLimitRetryLLM.cooldown_models.discard(current_model)
-                self._current_model = current_model
-                return response
-                
-            except Exception as e:
-                error_str = str(e).lower()
-                
-                # 檢查是否為 429 限流錯誤
-                if "429" in str(e) or "rate" in error_str or "too many" in error_str:
-                    logger.warning(f"RateLimitRetryLLM: model {current_model} hit rate limit, switching...")
-                    RateLimitRetryLLM.cooldown_models.add(current_model)
-                    last_error = e
-                    
-                    # 如果還有其他模型可用，立即重試
-                    if len(RateLimitRetryLLM.cooldown_models) < len(self.fallback_models) + 1:
-                        continue
-                    else:
-                        # 所有模型都限流，等待一段時間後重置
-                        logger.warning("All models rate limited, waiting 10 seconds...")
-                        await asyncio.sleep(10)
-                        RateLimitRetryLLM.cooldown_models.clear()
-                        continue
-                else:
-                    # 非限流錯誤，直接拋出
-                    raise
-        
-        # 所有重試都失敗
-        raise last_error or Exception("All LLM retry attempts failed")
-    
-    @property
-    def current_model(self) -> str:
-        """返回當前使用的模型"""
-        return self._current_model
-
-
 def get_llm(bind_tools: bool = False):
-    """取得 LLM 實例（含 Rate Limit 容錯）
+    """取得 LLM 實例（使用 LangChain 內建 fallback 機制）
 
     Args:
         bind_tools: 是否綁定工具（Phase 3c）
-    
+
     環境變數：
-        GROQ_MODEL: 主要模型（預設 llama-3.1-8b-instant）
+        GROQ_MODEL: 主要模型（預設 openai/gpt-oss-120b）
         GROQ_FALLBACK_MODELS: 備用模型，逗號分隔（可選）
+
+    Fallback 順序：
+        1. PRIMARY_MODEL (from env, 預設 openai/gpt-oss-120b)
+        2. moonshotai/kimi-k2-instruct-0905
+        3. llama-3.1-8b-instant
+
+    重要修正：
+        - 先 bind_tools 再 with_fallbacks（保證所有 fallback 都能呼叫工具）
+        - 使用 api_key 參數（官方標準）
+        - exceptions_to_handle 包含 HTTPStatusError（捕捉 429）
     """
-    primary_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-    
+    from groq import RateLimitError, APIError
+    from httpx import TimeoutException, HTTPStatusError, RequestError
+
+    primary_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    api_key = os.getenv("GROQ_API_KEY")
+
     # 解析備用模型列表
     fallback_env = os.getenv("GROQ_FALLBACK_MODELS", "")
     if fallback_env:
@@ -384,14 +304,54 @@ def get_llm(bind_tools: bool = False):
     else:
         # 使用預設列表，但排除主模型
         fallback_models = [m for m in DEFAULT_FALLBACK_MODELS if m != primary_model]
-    
+
     logger.debug(f"get_llm: primary={primary_model}, fallbacks={fallback_models}, bind_tools={bind_tools}")
-    
-    return RateLimitRetryLLM(
-        primary_model=primary_model,
-        fallback_models=fallback_models,
-        bind_tools=bind_tools
+
+    # 主要模型
+    primary_llm = ChatGroq(
+        model=primary_model,
+        temperature=0.7,
+        max_retries=0,  # 不在 SDK 層重試，讓 LangChain fallback 接手
+        timeout=30.0,
+        api_key=api_key  # 使用官方標準參數
     )
+
+    # ✅ 關鍵修正：先綁定工具，再做 fallback
+    if bind_tools:
+        primary_llm = primary_llm.bind_tools(tools)
+
+    # 建立 fallback LLM 列表
+    fallback_llms = []
+    for fallback_model in fallback_models:
+        fallback_llm = ChatGroq(
+            model=fallback_model,
+            temperature=0.7,
+            max_retries=0,  # fallback 層也不重試，保持快速切換
+            timeout=30.0,
+            api_key=api_key
+        )
+        # ✅ 每個 fallback 也要綁定工具
+        if bind_tools:
+            fallback_llm = fallback_llm.bind_tools(tools)
+
+        fallback_llms.append(fallback_llm)
+
+    # 使用 LangChain 內建 fallback 機制
+    if fallback_llms:
+        llm_with_fallbacks = primary_llm.with_fallbacks(
+            fallbacks=fallback_llms,
+            # ✅ 擴充錯誤類型：包含 HTTPStatusError（429 錯誤）
+            exceptions_to_handle=(
+                RateLimitError,      # Groq SDK 的 rate limit error
+                APIError,            # Groq SDK 的通用 API error
+                HTTPStatusError,     # httpx 的 HTTP 狀態錯誤（含 429）
+                RequestError,        # httpx 的請求錯誤
+                TimeoutException     # httpx 的 timeout
+            )
+        )
+        return llm_with_fallbacks
+    else:
+        return primary_llm
 
 
 # ============================================================
