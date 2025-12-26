@@ -132,22 +132,22 @@ export function AppSidebar() {
   };
 
   return (
-    <Sidebar className="border-r border-slate-200 dark:border-slate-800/50">
+    <Sidebar className="border-r border-slate-200 dark:border-slate-800/50 max-w-[12rem] overflow-hidden">
       {/* Sidebar Header */}
-      <SidebarHeader className="border-b border-slate-200 dark:border-slate-800/50 p-4">
+      <SidebarHeader className="border-b border-slate-200 dark:border-slate-800/50 p-4 overflow-hidden">
         <Link
           href="/"
           onClick={handleLogoClick}
-          className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer"
+          className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer min-w-0"
         >
-          <div className="p-2 rounded-lg bg-gradient-to-br from-purple-600 to-blue-600">
+          <div className="p-2 rounded-lg bg-gradient-to-br from-purple-600 to-blue-600 shrink-0">
             <Swords className="size-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-lg font-bold bg-gradient-to-r from-purple-400 via-pink-500 to-blue-400 bg-clip-text text-transparent">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg font-bold bg-gradient-to-r from-purple-400 via-pink-500 to-blue-400 bg-clip-text text-transparent truncate">
               DebateAI
             </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-500 truncate">
               {t("sidebarSubtitle")}
             </p>
           </div>
@@ -222,14 +222,12 @@ export function AppSidebar() {
                       }
                       className="hover:bg-slate-100 dark:hover:bg-slate-800/50"
                     >
-                      <Link href={`/history?id=${debate.id}`}>
-                        <div className="flex flex-col items-start w-full min-w-0">
-                          <span className="text-sm truncate w-full">
-                            {debate.topic.length > 25
-                              ? debate.topic.slice(0, 25) + "..."
-                              : debate.topic}
+                      <Link href={`/history?id=${debate.id}`} className="w-full min-w-0">
+                        <div className="flex flex-col items-start w-full min-w-0 max-w-full">
+                          <span className="text-sm truncate w-full max-w-full block">
+                            {debate.topic}
                           </span>
-                          <span className="text-xs text-slate-500">
+                          <span className="text-xs text-slate-500 truncate w-full max-w-full block">
                             {formatRelativeTime(debate.created_at, locale)} •{" "}
                             {debate.rounds_completed}{" "}
                             {locale === "en" ? "rounds" : "輪"}
