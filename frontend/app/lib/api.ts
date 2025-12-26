@@ -90,7 +90,7 @@ export async function streamDebate(
             try {
                 const data = JSON.parse(buffer.slice(6)) as SSEEvent;
                 onEvent(data);
-            } catch (e) {
+            } catch {
                 // 忽略不完整的最後一行
             }
         }

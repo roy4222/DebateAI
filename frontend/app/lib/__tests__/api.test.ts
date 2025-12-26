@@ -10,7 +10,8 @@ import {
   checkHealth, 
   saveDebate, 
   getRecentDebates, 
-  getDebateById 
+  getDebateById,
+  SSEEvent
 } from '@/app/lib/api'
 
 // Mock fetch
@@ -155,7 +156,7 @@ describe('API Client', () => {
         body: stream
       })
 
-      const events: any[] = []
+      const events: SSEEvent[] = []
       await streamDebate(
         { topic: 'Test', max_rounds: 3 },
         (event) => events.push(event)
@@ -163,7 +164,7 @@ describe('API Client', () => {
 
       expect(events.length).toBeGreaterThan(0)
       expect(events[0].type).toBe('status')
-      expect(events[0].text).toBe('開始辯論')
+      expect((events[0] as { type: 'status'; text: string }).text).toBe('開始辯論')
     })
 
     it('should handle abort signal', async () => {
@@ -174,7 +175,7 @@ describe('API Client', () => {
       abortError.name = 'AbortError'
       mockFetch.mockRejectedValue(abortError)
       
-      const events: any[] = []
+      const events: SSEEvent[] = []
       
       try {
         await streamDebate(
@@ -182,7 +183,7 @@ describe('API Client', () => {
           (event) => events.push(event),
           abortController.signal
         )
-      } catch (e) {
+      } catch {
         // Expected to throw
       }
 
@@ -197,14 +198,14 @@ describe('API Client', () => {
         statusText: 'Internal Server Error'
       })
 
-      const events: any[] = []
+      const events: SSEEvent[] = []
       
       try {
         await streamDebate(
           { topic: 'Test' },
           (event) => events.push(event)
         )
-      } catch (e) {
+      } catch {
         // Expected to throw
       }
 

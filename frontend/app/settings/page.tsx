@@ -13,6 +13,7 @@ export default function SettingsPage() {
 
   // 避免 hydration 不匹配
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 
@@ -30,10 +31,13 @@ export default function SettingsPage() {
   return (
     <div className="flex-1 bg-gradient-to-br from-slate-100 via-slate-50 to-white dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 p-8">
       <div className="max-w-3xl mx-auto">
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">{t("settings")}</h1>
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">
+          {t("settings")}
+        </h1>
         <div className="bg-white/60 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/50 rounded-lg p-6 space-y-6 shadow-sm">
           <p className="text-slate-700 dark:text-slate-300">
-            {t("settingsDescription")} <strong className="text-slate-900 dark:text-white">DebateAI</strong>{" "}
+            {t("settingsDescription")}{" "}
+            <strong className="text-slate-900 dark:text-white">DebateAI</strong>{" "}
             {t("preferenceSuffix")}
           </p>
 
@@ -71,7 +75,10 @@ export default function SettingsPage() {
 
             {mounted && (
               <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
-                {t("currentTheme")}{themeOptions.find((o) => o.value === theme)?.labelKey ? t(themeOptions.find((o) => o.value === theme)!.labelKey) : t("themeUnknown")}
+                {t("currentTheme")}
+                {themeOptions.find((o) => o.value === theme)?.labelKey
+                  ? t(themeOptions.find((o) => o.value === theme)!.labelKey)
+                  : t("themeUnknown")}
               </p>
             )}
           </div>
@@ -111,7 +118,11 @@ export default function SettingsPage() {
 
             {mounted && (
               <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
-                {t("currentLanguage")}{t(languageOptions.find((o) => o.value === locale)?.labelKey || "languageChinese")}
+                {t("currentLanguage")}
+                {t(
+                  languageOptions.find((o) => o.value === locale)?.labelKey ||
+                    "languageChinese"
+                )}
               </p>
             )}
           </div>

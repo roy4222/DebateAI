@@ -1,11 +1,9 @@
 "use client";
 
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
 
 export default function AboutPage() {
-  const { t, locale } = useI18n();
+  const { locale } = useI18n();
 
   return (
     <div className="flex-1 bg-gradient-to-br from-slate-100 via-slate-50 to-white dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 p-8">

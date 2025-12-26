@@ -1,6 +1,12 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 
 export type Locale = "zh" | "en";
 
@@ -11,7 +17,7 @@ const translations = {
     settings: "⚙️ 設定",
     settingsDescription: "在此調整您的",
     preferenceSuffix: "偏好設定。",
-    
+
     // Theme
     themeTitle: "🎨 外觀主題",
     themeDescription: "選擇您偏好的顯示模式",
@@ -20,44 +26,51 @@ const translations = {
     themeSystem: "系統",
     currentTheme: "目前主題：",
     themeUnknown: "未知",
-    
+
     // Language
     languageTitle: "🌐 語言設定",
     languageDescription: "選擇介面顯示語言",
     languageChinese: "中文",
     languageEnglish: "English",
     currentLanguage: "目前語言：",
-    
+
     // Common
     moreSettingsComingSoon: "更多設定功能開發中...",
     pageInDevelopment: "此頁面正在開發中...",
-    
+
     // Sidebar
     sidebarNav: "導覽",
     sidebarSubtitle: "Multi-Agent 辯論平台",
+    sidebarRecentDebates: "最近辯論",
+    sidebarNoDebates: "尚無辯論記錄",
+    sidebarViewAll: "查看所有紀錄",
     navDebate: "辯論",
+    navHistory: "歷史紀錄",
     navAbout: "關於我們",
     navPricing: "價格方案",
     navSettings: "設定",
-    
+
     // About page
     aboutTitle: "ℹ️ 關於我們",
-    aboutDescription: "是一個 Multi-Agent 即時辯論平台，讓 AI 辯手針對各種議題進行深度辯論。",
-    
+    aboutDescription:
+      "是一個 Multi-Agent 即時辯論平台，讓 AI 辯手針對各種議題進行深度辯論。",
+
     // Pricing page
     pricingTitle: "💰 價格方案",
     pricingDescription: "提供免費使用！",
     pricingCurrently: "目前",
-    
+
     // Debate UI
     debateWelcomeTitle: "準備好開始一場精彩的辯論了嗎？",
-    debateWelcomeDescription: "輸入一個主題，觀看 AI 樂觀者與懷疑者展開激烈交鋒。每個論點都會即時串流顯示。",
+    debateWelcomeDescription:
+      "輸入一個主題，觀看 AI 樂觀者與懷疑者展開激烈交鋒。每個論點都會即時串流顯示。",
     debateTopic: "🎯 辯論主題：",
     debateDefaultTopic: "AI 會取代大部分人類工作嗎？",
     debateConnecting: "⚡ 正在連接 AI 辯論引擎...",
     debateTimeout: "❌ 連接超時，引擎可能正在冷啟動，請重試",
     debateConnectionFailed: "❌ 連接失敗：",
     debateStopped: "🛑 辯論已停止",
+    debateSavedSuccess: "✅ 辯論完成並已儲存！",
     debateError: "❌ 錯誤：",
     debateConnectionTime: "連線耗時：",
     debateSearching: "🔍 正在搜尋資料...",
@@ -65,14 +78,14 @@ const translations = {
     debateOptimistSearching: "樂觀者",
     debateSkepticSearching: "懷疑者",
     debateSearchFor: "正在搜尋：",
-    
+
     // Topic Form
     topicPlaceholder: "輸入辯論主題，例如：AI 會取代人類工作嗎？",
     topicStop: "停止",
     topicStart: "開始辯論",
     topicPoweredBy: "Powered by",
     topicTestVersion: "• Phase 1 測試版",
-    
+
     // Message Bubble
     roleOptimist: "樂觀者",
     roleSkeptic: "懷疑者",
@@ -85,7 +98,7 @@ const translations = {
     settings: "⚙️ Settings",
     settingsDescription: "Adjust your",
     preferenceSuffix: "preferences here.",
-    
+
     // Theme
     themeTitle: "🎨 Appearance",
     themeDescription: "Choose your preferred display mode",
@@ -94,44 +107,52 @@ const translations = {
     themeSystem: "System",
     currentTheme: "Current theme: ",
     themeUnknown: "Unknown",
-    
+
     // Language
     languageTitle: "🌐 Language",
     languageDescription: "Choose interface language",
     languageChinese: "中文",
     languageEnglish: "English",
     currentLanguage: "Current language: ",
-    
+
     // Common
     moreSettingsComingSoon: "More settings coming soon...",
     pageInDevelopment: "This page is under development...",
-    
+
     // Sidebar
     sidebarNav: "Navigation",
     sidebarSubtitle: "Multi-Agent Debate Platform",
+    sidebarRecentDebates: "Recent Debates",
+    sidebarNoDebates: "No debate history",
+    sidebarViewAll: "View all records",
     navDebate: "Debate",
+    navHistory: "History",
     navAbout: "About",
     navPricing: "Pricing",
     navSettings: "Settings",
-    
+
     // About page
     aboutTitle: "ℹ️ About Us",
-    aboutDescription: "is a Multi-Agent real-time debate platform where AI debaters engage in in-depth debates on various topics.",
-    
+    aboutDescription:
+      "is a Multi-Agent real-time debate platform where AI debaters engage in in-depth debates on various topics.",
+
     // Pricing page
     pricingTitle: "💰 Pricing",
     pricingDescription: "is free to use!",
     pricingCurrently: "Currently,",
-    
+
     // Debate UI
     debateWelcomeTitle: "Ready to start an exciting debate?",
-    debateWelcomeDescription: "Enter a topic and watch AI optimist and skeptic engage in a heated debate. Each argument will be streamed in real-time.",
+    debateWelcomeDescription:
+      "Enter a topic and watch AI optimist and skeptic engage in a heated debate. Each argument will be streamed in real-time.",
     debateTopic: "🎯 Debate Topic: ",
     debateDefaultTopic: "Will AI replace most human jobs?",
     debateConnecting: "⚡ Connecting to AI Debate Engine...",
-    debateTimeout: "❌ Connection timed out. Engine may be cold-starting, please retry.",
+    debateTimeout:
+      "❌ Connection timed out. Engine may be cold-starting, please retry.",
     debateConnectionFailed: "❌ Connection failed: ",
     debateStopped: "🛑 Debate stopped",
+    debateSavedSuccess: "✅ Debate completed and saved!",
     debateError: "❌ Error: ",
     debateConnectionTime: "Connection time: ",
     debateSearching: "🔍 Searching for data...",
@@ -139,14 +160,14 @@ const translations = {
     debateOptimistSearching: "Optimist",
     debateSkepticSearching: "Skeptic",
     debateSearchFor: "is searching: ",
-    
+
     // Topic Form
     topicPlaceholder: "Enter debate topic, e.g.: Will AI replace human jobs?",
     topicStop: "Stop",
     topicStart: "Start Debate",
     topicPoweredBy: "Powered by",
     topicTestVersion: "• Phase 1 Test Version",
-    
+
     // Message Bubble
     roleOptimist: "Optimist",
     roleSkeptic: "Skeptic",
@@ -175,6 +196,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     // 從 localStorage 讀取儲存的語言設定
     const savedLocale = localStorage.getItem(STORAGE_KEY) as Locale | null;
     if (savedLocale && (savedLocale === "zh" || savedLocale === "en")) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLocaleState(savedLocale);
     }
   }, []);
