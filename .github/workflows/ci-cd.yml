@@ -16,7 +16,7 @@ jobs:
       - run: uv python install 3.11
       - run: uv sync --extra test
         working-directory: backend
-      - run: uv run pytest --cov --cov-fail-under=80
+      - run: uv run pytest --cov --cov-report=xml --cov-fail-under=80
         working-directory: backend
 
   frontend-test:
