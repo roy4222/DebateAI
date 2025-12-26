@@ -11,6 +11,7 @@ import {
   History,
   Clock,
   ArrowRight,
+  Plus,
 } from "lucide-react";
 import {
   Sidebar,
@@ -57,6 +58,15 @@ const menuItems = [
   },
 ];
 
+// 特殊操作項目（不是導航連結）
+const actionItems = [
+  {
+    titleKey: "navNewDebate" as const,
+    action: "reset",
+    icon: Plus,
+  },
+];
+
 // 格式化相對時間
 function formatRelativeTime(dateString: string, locale: string): string {
   const date = new Date(dateString);
@@ -100,13 +110,35 @@ export function AppSidebar() {
     fetchRecent();
   }, [setRecentDebates]);
 
+  // 處理新辯論按鈕點擊
+  const handleNewDebate = () => {
+    // 呼叫 DebateUI 暴露的重置函數
+    if (typeof window !== "undefined") {
+      const resetFn = (window as any).__debateUI_reset;
+      if (resetFn) {
+        resetFn();
+      }
+    }
+  };
+
+  // 處理 Logo 點擊
+  const handleLogoClick = (e: React.MouseEvent) => {
+    // 如果已經在首頁，則重置辯論
+    if (pathname === "/") {
+      e.preventDefault();
+      handleNewDebate();
+    }
+    // 否則讓 Link 正常導航到首頁
+  };
+
   return (
     <Sidebar className="border-r border-slate-200 dark:border-slate-800/50">
       {/* Sidebar Header */}
       <SidebarHeader className="border-b border-slate-200 dark:border-slate-800/50 p-4">
         <Link
           href="/"
-          className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+          onClick={handleLogoClick}
+          className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer"
         >
           <div className="p-2 rounded-lg bg-gradient-to-br from-purple-600 to-blue-600">
             <Swords className="size-5 text-white" />
@@ -131,6 +163,20 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
+              {/* 操作按鈕（新辯論） */}
+              {actionItems.map((item) => (
+                <SidebarMenuItem key={item.titleKey}>
+                  <SidebarMenuButton
+                    onClick={handleNewDebate}
+                    className="hover:bg-slate-100 dark:hover:bg-slate-800/50 text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 font-medium"
+                  >
+                    <item.icon className="size-4" />
+                    <span>{t(item.titleKey)}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+
+              {/* 導航連結 */}
               {menuItems.map((item) => (
                 <SidebarMenuItem key={item.titleKey}>
                   <SidebarMenuButton

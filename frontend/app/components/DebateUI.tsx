@@ -329,6 +329,49 @@ export function DebateUI() {
   };
 
   // ============================================================
+  // 重置辯論（開始新辯論）
+  // ============================================================
+  const resetDebate = useCallback(() => {
+    // 停止當前辯論（如果正在進行）
+    if (isStreaming) {
+      abortControllerRef.current?.abort();
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+      }
+    }
+
+    // 完全重置所有狀態
+    setMessages([]);
+    setCurrentTopic("");
+    setStatus("");
+    setConnectionTime(null);
+    setIsStreaming(false);
+    setSearchStatus({ isSearching: false });
+    clearAllBuffers();
+    currentTopicRef.current = "";
+
+    // 恢復預設主題
+    setTopic(
+      locale === "zh"
+        ? "AI 會取代大部分人類工作嗎？"
+        : "Will AI replace most human jobs?"
+    );
+  }, [isStreaming, locale, clearAllBuffers]);
+
+  // ============================================================
+  // 暴露 resetDebate 給父組件使用
+  // ============================================================
+  useEffect(() => {
+    // 將 reset 函數掛載到 window，讓 sidebar/header 可以呼叫
+    (window as any).__debateUI_reset = resetDebate;
+
+    return () => {
+      delete (window as any).__debateUI_reset;
+    };
+  }, [resetDebate]);
+
+  // ============================================================
   // 渲染
   // ============================================================
   return (
