@@ -65,11 +65,12 @@ async def duckduckgo_search(query: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
-async def web_search(query: str) -> dict:
+async def web_search(query: str, language: str = "zh") -> dict:
     """三層容錯網路搜尋
 
     Args:
         query: 搜尋關鍵字
+        language: 語言設定 ("zh" 或 "en")
 
     Returns:
         dict: {
@@ -83,40 +84,54 @@ async def web_search(query: str) -> dict:
     # 第一層：Tavily
     result = await tavily_search(query)
     if result["success"]:
-        formatted = format_results(result["results"], result["source"])
+        formatted = format_results(result["results"], result["source"], language)
         return {**result, "formatted": formatted}
 
     # 第二層：DuckDuckGo
     result = await duckduckgo_search(query)
     if result["success"]:
-        formatted = format_results(result["results"], result["source"])
+        formatted = format_results(result["results"], result["source"], language)
         return {**result, "formatted": formatted}
 
     # 第三層：優雅降級
+    if language == "en":
+        fallback_msg = f"[Note] Search temporarily unavailable. Agent will answer about '{query}' based on existing knowledge."
+    else:
+        fallback_msg = f"[注意] 搜尋功能暫時無法使用，Agent 將基於現有知識回答關於「{query}」的問題。"
+    
     return {
         "success": False,
         "source": "fallback",
-        "formatted": f"[注意] 搜尋功能暫時無法使用，Agent 將基於現有知識回答關於「{query}」的問題。"
+        "formatted": fallback_msg
     }
 
 
-def format_results(results: list, source: str) -> str:
+def format_results(results: list, source: str, language: str = "zh") -> str:
     """格式化搜尋結果為可讀文字
 
     Args:
         results: 搜尋結果列表
         source: 來源（"tavily" | "duckduckgo"）
+        language: 語言設定 ("zh" 或 "en")
 
     Returns:
         格式化的文字
     """
     # 根據來源選擇內容欄位（Tavily 用 content，DuckDuckGo 用 body）
     content_key = "content" if source == "tavily" else "body"
+    
+    if language == "en":
+        no_title = "Unknown Title"
+        header = f"[{source.upper()}] Search Results:"
+    else:
+        no_title = "未知標題"
+        header = f"[{source.upper()}] 搜尋結果："
+    
     lines = [
-        f"• {r.get('title', '未知標題')}: {r.get(content_key, '')[:200]}..."
+        f"• {r.get('title', no_title)}: {r.get(content_key, '')[:200]}..."
         for r in results[:3]
     ]
     
     formatted = "\n".join(lines)
-    return f"[{source.upper()}] 搜尋結果：\n{formatted}"
+    return f"{header}\n{formatted}"
 

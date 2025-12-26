@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useDebateHistory } from "@/contexts/DebateHistoryContext";
+import { useI18n } from "@/lib/i18n";
 
 // 訊息類型
 interface Message {
@@ -33,11 +34,16 @@ interface Message {
 export function DebateUI() {
   // Phase 4: 使用 context 來更新 sidebar
   const { addNewDebate } = useDebateHistory();
+  const { t, locale } = useI18n();
 
   // ============================================================
   // 狀態管理
   // ============================================================
-  const [topic, setTopic] = useState("AI 會取代大部分人類工作嗎？");
+  const [topic, setTopic] = useState(
+    locale === "zh"
+      ? "AI 會取代大部分人類工作嗎？"
+      : "Will AI replace most human jobs?"
+  );
   const [currentTopic, setCurrentTopic] = useState<string>(""); // 保存當前辯論主題
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentText, setCurrentText] = useState<{ [key: string]: string }>({});
@@ -59,9 +65,9 @@ export function DebateUI() {
   // ============================================================
   const textBufferRef = useRef<{ [key: string]: string }>({});
   const roundInfoRef = useRef<{ [key: string]: string }>({});
-  const messagesRef = useRef<Message[]>([]);  // Phase 4: 同步追蹤訊息避免 race condition
-  const currentTopicRef = useRef<string>("");  // Phase 4: 避免 stale closure
-  const addNewDebateRef = useRef(addNewDebate);  // Phase 4: 避免 stale closure
+  const messagesRef = useRef<Message[]>([]); // Phase 4: 同步追蹤訊息避免 race condition
+  const currentTopicRef = useRef<string>(""); // Phase 4: 避免 stale closure
+  const addNewDebateRef = useRef(addNewDebate); // Phase 4: 避免 stale closure
   const abortControllerRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -90,7 +96,7 @@ export function DebateUI() {
   const clearAllBuffers = useCallback(() => {
     textBufferRef.current = {};
     roundInfoRef.current = {};
-    messagesRef.current = [];  // Phase 4: 清空 ref
+    messagesRef.current = []; // Phase 4: 清空 ref
     setCurrentText({});
     setCurrentRound({});
   }, []);
@@ -98,143 +104,156 @@ export function DebateUI() {
   // ============================================================
   // Phase 4: 自動儲存辯論
   // ============================================================
-  const handleAutoSave = useCallback(async (completeText: string) => {
-    // 從 complete 訊息解析輪數
-    const roundMatch = completeText.match(/(\d+)\s*輪/);
-    const roundsCompleted = roundMatch ? parseInt(roundMatch[1], 10) : 3;
+  const handleAutoSave = useCallback(
+    async (completeText: string) => {
+      // 從 complete 訊息解析輪數
+      const roundMatch =
+        completeText.match(/(\d+)\s*輪/) ||
+        completeText.match(/(\d+)\s*round/i);
+      const roundsCompleted = roundMatch ? parseInt(roundMatch[1], 10) : 3;
 
-    // ⚠️ 使用 ref 取得最新值，避免 stale closure
-    const messagesToSave = [...messagesRef.current];
-    const topic = currentTopicRef.current;
+      // ⚠️ 使用 ref 取得最新值，避免 stale closure
+      const messagesToSave = [...messagesRef.current];
+      const topicToSave = currentTopicRef.current;
 
-    if (!topic || messagesToSave.length === 0) {
-      console.log("No topic or messages to save");
-      return;
-    }
-
-    console.log(`Saving debate: ${topic}, ${messagesToSave.length} messages, ${roundsCompleted} rounds`);
-
-    try {
-      const result = await saveDebate(topic, messagesToSave, 3, roundsCompleted);
-
-      if (result.success && result.debate_id) {
-        console.log(`Debate saved: ${result.debate_id}`);
-        setStatus("✅ 辯論完成並已儲存！");
-
-        // 使用 ref 呼叫最新的 addNewDebate
-        addNewDebateRef.current({
-          id: result.debate_id,
-          topic,
-          created_at: new Date().toISOString(),
-          rounds_completed: roundsCompleted,
-        });
-      } else {
-        console.error("Failed to save debate:", result.error);
+      if (!topicToSave || messagesToSave.length === 0) {
+        console.log("No topic or messages to save");
+        return;
       }
-    } catch (error) {
-      console.error("Save debate error:", error);
-    }
-  }, []);  // 無依賴，完全使用 ref
+
+      console.log(
+        `Saving debate: ${topicToSave}, ${messagesToSave.length} messages, ${roundsCompleted} rounds`
+      );
+
+      try {
+        const result = await saveDebate(
+          topicToSave,
+          messagesToSave,
+          3,
+          roundsCompleted
+        );
+
+        if (result.success && result.debate_id) {
+          console.log(`Debate saved: ${result.debate_id}`);
+          setStatus(t("debateSavedSuccess"));
+
+          // 使用 ref 呼叫最新的 addNewDebate
+          addNewDebateRef.current({
+            id: result.debate_id,
+            topic: topicToSave,
+            created_at: new Date().toISOString(),
+            rounds_completed: roundsCompleted,
+          });
+        } else {
+          console.error("Failed to save debate:", result.error);
+        }
+      } catch (error) {
+        console.error("Save debate error:", error);
+      }
+    },
+    [t]
+  );
 
   // ============================================================
   // SSE 事件處理器
   // ============================================================
-  const handleSSEEvent = useCallback((event: SSEEvent) => {
-    // ⚠️ 修正：首包到達時記錄連線時間並解除超時
-    if (!firstChunkReceivedRef.current) {
-      firstChunkReceivedRef.current = true;
-      const elapsed = Date.now() - connectionStartTimeRef.current;
+  const handleSSEEvent = useCallback(
+    (event: SSEEvent) => {
+      // ⚠️ 修正：首包到達時記錄連線時間並解除超時
+      if (!firstChunkReceivedRef.current) {
+        firstChunkReceivedRef.current = true;
+        const elapsed = Date.now() - connectionStartTimeRef.current;
 
-      // 清除連線超時（首包已到達，改為無限制串流）
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-        connectionTimeoutRef.current = null;
+        // 清除連線超時（首包已到達，改為無限制串流）
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
+
+        // 只有連線時間 > 3 秒才顯示（表示有冷啟動）
+        if (elapsed > 3000) {
+          setConnectionTime(elapsed);
+        }
       }
 
-      // 只有連線時間 > 3 秒才顯示（表示有冷啟動）
-      if (elapsed > 3000) {
-        setConnectionTime(elapsed);
+      switch (event.type) {
+        case "status":
+          setStatus(event.text);
+          break;
+
+        case "speaker":
+          textBufferRef.current[event.node] = "";
+          roundInfoRef.current[event.node] = event.text;
+          setCurrentRound((prev) => ({
+            ...prev,
+            [event.node]: event.text,
+          }));
+          break;
+
+        case "token":
+          textBufferRef.current[event.node] =
+            (textBufferRef.current[event.node] || "") + event.text;
+
+          setCurrentText((prev) => ({
+            ...prev,
+            [event.node]: textBufferRef.current[event.node],
+          }));
+          break;
+
+        case "speaker_end":
+          const finalText = textBufferRef.current[event.node] || "";
+          const roundInfo = roundInfoRef.current[event.node] || "";
+
+          // Phase 4: 同步更新 ref（先於 state 更新）
+          const newMessage = { node: event.node, text: finalText, roundInfo };
+          messagesRef.current = [...messagesRef.current, newMessage];
+
+          setMessages((prev) => [...prev, newMessage]);
+
+          textBufferRef.current[event.node] = "";
+          roundInfoRef.current[event.node] = "";
+          setCurrentText((prev) => ({ ...prev, [event.node]: "" }));
+          setCurrentRound((prev) => ({ ...prev, [event.node]: "" }));
+          break;
+
+        case "complete":
+          setSearchStatus({ isSearching: false });
+          setStatus(event.text);
+
+          // Phase 4: 自動儲存辯論
+          // 使用 setTimeout 確保 messages 已更新
+          setTimeout(() => {
+            handleAutoSave(event.text);
+          }, 100);
+          break;
+
+        case "error":
+          setSearchStatus({ isSearching: false }); // Phase 3b: 清除搜尋狀態
+          setStatus(`${t("debateError")}${event.text}`);
+          break;
+
+        // Phase 3b: 搜尋工具事件
+        case "tool_start":
+          setSearchStatus({
+            isSearching: true,
+            query: event.query,
+            node: event.node,
+          });
+          const searchingRole =
+            event.node === "optimist"
+              ? t("debateOptimistSearching")
+              : t("debateSkepticSearching");
+          setStatus(`🔍 ${searchingRole}${t("debateSearchFor")}${event.query}`);
+          break;
+
+        case "tool_end":
+          setSearchStatus({ isSearching: false });
+          setStatus(t("debateSearchComplete"));
+          break;
       }
-    }
-
-    switch (event.type) {
-      case "status":
-        setStatus(event.text);
-        break;
-
-      case "speaker":
-        textBufferRef.current[event.node] = "";
-        roundInfoRef.current[event.node] = event.text;
-        setCurrentRound((prev) => ({
-          ...prev,
-          [event.node]: event.text,
-        }));
-        break;
-
-      case "token":
-        textBufferRef.current[event.node] =
-          (textBufferRef.current[event.node] || "") + event.text;
-
-        setCurrentText((prev) => ({
-          ...prev,
-          [event.node]: textBufferRef.current[event.node],
-        }));
-        break;
-
-      case "speaker_end":
-        const finalText = textBufferRef.current[event.node] || "";
-        const roundInfo = roundInfoRef.current[event.node] || "";
-
-        // Phase 4: 同步更新 ref（先於 state 更新）
-        const newMessage = { node: event.node, text: finalText, roundInfo };
-        messagesRef.current = [...messagesRef.current, newMessage];
-
-        setMessages((prev) => [
-          ...prev,
-          newMessage,
-        ]);
-
-        textBufferRef.current[event.node] = "";
-        roundInfoRef.current[event.node] = "";
-        setCurrentText((prev) => ({ ...prev, [event.node]: "" }));
-        setCurrentRound((prev) => ({ ...prev, [event.node]: "" }));
-        break;
-
-      case "complete":
-        setSearchStatus({ isSearching: false });
-        setStatus(event.text);
-
-        // Phase 4: 自動儲存辯論
-        // 使用 setTimeout 確保 messages 已更新
-        setTimeout(() => {
-          handleAutoSave(event.text);
-        }, 100);
-        break;
-
-      case "error":
-        setSearchStatus({ isSearching: false }); // Phase 3b: 清除搜尋狀態
-        setStatus(`❌ 錯誤：${event.text}`);
-        break;
-
-      // Phase 3b: 搜尋工具事件
-      case "tool_start":
-        setSearchStatus({
-          isSearching: true,
-          query: event.query,
-          node: event.node,
-        });
-        setStatus(
-          `🔍 ${event.node === "optimist" ? "樂觀者" : "懷疑者"}正在搜尋：${event.query
-          }`
-        );
-        break;
-
-      case "tool_end":
-        setSearchStatus({ isSearching: false });
-        setStatus("✅ 搜尋完成，繼續辯論...");
-        break;
-    }
-  }, []);
+    },
+    [t, handleAutoSave]
+  );
 
   // ============================================================
   // 開始辯論
@@ -243,14 +262,14 @@ export function DebateUI() {
     // 保存主題並清空輸入框
     const debateTopic = topic.trim();
     setCurrentTopic(debateTopic);
-    currentTopicRef.current = debateTopic;  // Phase 4: 同步 ref
+    currentTopicRef.current = debateTopic; // Phase 4: 同步 ref
     setTopic(""); // 清空輸入框
 
     // 重置狀態
     setIsStreaming(true);
     setMessages([]);
     clearAllBuffers();
-    setStatus("⚡ 正在連接 AI 辯論引擎...");
+    setStatus(t("debateConnecting"));
     setConnectionTime(null);
 
     // ⚠️ 修正：重置連線追蹤狀態
@@ -265,19 +284,20 @@ export function DebateUI() {
     connectionTimeoutRef.current = setTimeout(() => {
       if (!firstChunkReceivedRef.current) {
         abortControllerRef.current?.abort();
-        setStatus("❌ 連接超時，引擎可能正在冷啟動，請重試");
+        setStatus(t("debateTimeout"));
       }
     }, 30000);
 
     try {
+      console.log("🌐 Starting debate with language:", locale);
       await streamDebate(
-        { topic: debateTopic, max_rounds: 3 },
+        { topic: debateTopic, max_rounds: 3, language: locale },
         handleSSEEvent,
         abortControllerRef.current.signal
       );
     } catch (error) {
       if (error instanceof Error && error.name !== "AbortError") {
-        setStatus(`❌ 連接失敗：${error.message}`);
+        setStatus(`${t("debateConnectionFailed")}${error.message}`);
       }
     } finally {
       // 清理超時
@@ -305,17 +325,17 @@ export function DebateUI() {
     clearAllBuffers();
 
     setIsStreaming(false);
-    setStatus("🛑 辯論已停止");
+    setStatus(t("debateStopped"));
   };
 
   // ============================================================
   // 渲染
   // ============================================================
   return (
-    <div className="flex flex-col flex-1 h-screen overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="flex flex-col flex-1 h-screen overflow-hidden bg-gradient-to-br from-slate-100 via-slate-50 to-white dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       {/* ========== Header (只在有內容時顯示) ========== */}
       {(currentTopic || status) && (
-        <header className="flex-shrink-0 px-6 py-3 border-b border-slate-800/50 bg-slate-900/95 ">
+        <header className="flex-shrink-0 px-6 py-3 border-b border-slate-200 dark:border-slate-800/50 bg-white/80 dark:bg-slate-900/95 ">
           <div className="max-w-4xl mx-auto flex items-center justify-between">
             {/* 辯論主題顯示 */}
             <div className="flex-1">
@@ -324,7 +344,8 @@ export function DebateUI() {
                   variant="outline"
                   className="px-4 py-2 text-sm border-purple-500/50 bg-purple-500/10"
                 >
-                  🎯 辯論主題：{currentTopic}
+                  {t("debateTopic")}
+                  {currentTopic}
                 </Badge>
               )}
             </div>
@@ -332,13 +353,17 @@ export function DebateUI() {
             {/* 狀態指示 */}
             <div className="text-right flex items-center gap-3">
               {status && (
-                <Badge variant="outline" className="text-slate-400">
+                <Badge
+                  variant="outline"
+                  className="text-slate-600 dark:text-slate-400"
+                >
                   {status}
                 </Badge>
               )}
               {connectionTime && (
-                <span className="text-xs text-slate-500">
-                  連線耗時：{(connectionTime / 1000).toFixed(1)}s
+                <span className="text-xs text-slate-500 dark:text-slate-500">
+                  {t("debateConnectionTime")}
+                  {(connectionTime / 1000).toFixed(1)}s
                 </span>
               )}
             </div>
@@ -351,15 +376,14 @@ export function DebateUI() {
         <div className="max-w-4xl mx-auto space-y-4">
           {/* 歡迎訊息 */}
           {messages.length === 0 && !isStreaming && !currentTopic && (
-            <Card className="max-w-lg mx-auto text-center border-slate-700/50">
+            <Card className="max-w-lg mx-auto text-center border-slate-200 dark:border-slate-700/50 bg-white/60 dark:bg-slate-800/40">
               <CardHeader className="pt-10 pb-8">
                 <div className="text-6xl mb-4">🎭</div>
-                <CardTitle className="text-xl">
-                  準備好開始一場精彩的辯論了嗎？
+                <CardTitle className="text-xl text-slate-900 dark:text-white">
+                  {t("debateWelcomeTitle")}
                 </CardTitle>
-                <CardDescription className="text-slate-400 mt-2">
-                  輸入一個主題，觀看 AI 樂觀者與懷疑者展開激烈交鋒。
-                  每個論點都會即時串流顯示。
+                <CardDescription className="text-slate-500 dark:text-slate-400 mt-2">
+                  {t("debateWelcomeDescription")}
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -367,9 +391,9 @@ export function DebateUI() {
 
           {/* Phase 3b: 搜尋指示器 */}
           {searchStatus.isSearching && (
-            <div className="mb-4 p-3 bg-yellow-950/20 border border-yellow-800/50 rounded-lg flex items-center gap-3">
+            <div className="mb-4 p-3 bg-yellow-100/50 dark:bg-yellow-950/20 border border-yellow-300 dark:border-yellow-800/50 rounded-lg flex items-center gap-3">
               <svg
-                className="animate-spin h-5 w-5 text-yellow-500"
+                className="animate-spin h-5 w-5 text-yellow-600 dark:text-yellow-500"
                 viewBox="0 0 24 24"
               >
                 <circle
@@ -388,10 +412,10 @@ export function DebateUI() {
                 />
               </svg>
               <div className="flex-1">
-                <p className="text-sm font-medium text-yellow-100">
-                  🔍 正在搜尋資料...
+                <p className="text-sm font-medium text-yellow-800 dark:text-yellow-100">
+                  {t("debateSearching")}
                 </p>
-                <p className="text-xs text-yellow-300/70">
+                <p className="text-xs text-yellow-700/70 dark:text-yellow-300/70">
                   {searchStatus.query}
                 </p>
               </div>
@@ -427,7 +451,7 @@ export function DebateUI() {
       </main>
 
       {/* ========== Footer (Input Form) ========== */}
-      <footer className="flex-shrink-0 px-6 py-4 border-t border-slate-800/50 backdrop-blur-sm bg-slate-950/50">
+      <footer className="flex-shrink-0 px-6 py-4 border-t border-slate-200 dark:border-slate-800/50 backdrop-blur-sm bg-white/50 dark:bg-slate-950/50">
         <div className="max-w-4xl mx-auto">
           <TopicForm
             topic={topic}

@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen } from "@/app/__tests__/test-utils";
 import { MessageBubble } from "../MessageBubble";
 
 describe("MessageBubble", () => {

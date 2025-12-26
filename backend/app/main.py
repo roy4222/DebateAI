@@ -10,7 +10,7 @@ Phase 3c: LangGraph ToolNode 架構
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import asyncio
 import json
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # 載入環境變數
 load_dotenv()
 
-app = FastAPI(title="DebateAI API", version="0.3.4")
+app = FastAPI(title="DebateAI API", version="0.4.0")
 
 
 # ============================================================
@@ -74,11 +74,10 @@ app.add_middleware(
 # ============================================================
 # 請求模型
 # ============================================================
-from pydantic import Field
-
 class DebateRequest(BaseModel):
     topic: str = Field(..., min_length=1, max_length=200, description="辯論主題，最多 200 字")
     max_rounds: int = Field(default=3, ge=1, le=5, description="辯論輪數，1-5 輪")
+    language: str = Field(default="zh", pattern="^(zh|en)$", description="語言設定：zh (繁體中文) 或 en (English)")
 
 
 # ============================================================
@@ -92,73 +91,98 @@ def sse_event(data: dict) -> str:
 # ============================================================
 # Fake SSE 串流（Fallback）
 # ============================================================
-async def fake_debate_stream(topic: str, max_rounds: int = 3):
+async def fake_debate_stream(topic: str, max_rounds: int = 3, language: str = "zh"):
     """Phase 1 測試用：模擬 AI 辯論"""
-    
-    yield sse_event({'type': 'status', 'text': '⚡ [FAKE MODE] 正在喚醒模擬引擎...'})
+    is_en = language == "en"
+
+    msg_init = '⚡ [FAKE MODE] Waking up simulation engine...' if is_en else '⚡ [FAKE MODE] 正在喚醒模擬引擎...'
+    msg_ready = '🔥 Simulation engine ready!' if is_en else '🔥 模擬引擎已就緒！'
+
+    yield sse_event({'type': 'status', 'text': msg_init})
     await asyncio.sleep(0.3)
-    
-    yield sse_event({'type': 'status', 'text': '🔥 模擬引擎已就緒！'})
+
+    yield sse_event({'type': 'status', 'text': msg_ready})
     
     for round_num in range(1, max_rounds + 1):
         # Optimist
-        yield sse_event({'type': 'speaker', 'node': 'optimist', 'text': f'第 {round_num} 輪'})
-        
-        optimist_text = f"關於「{topic}」，我認為這是充滿機會的！科技進步總是帶來新的可能性。"
+        round_label = f'Round {round_num}' if is_en else f'第 {round_num} 輪'
+        yield sse_event({'type': 'speaker', 'node': 'optimist', 'text': round_label})
+
+        if is_en:
+            optimist_text = f"Regarding '{topic}', I believe this is full of opportunities! Technological progress always brings new possibilities."
+        else:
+            optimist_text = f"關於「{topic}」，我認為這是充滿機會的！科技進步總是帶來新的可能性。"
+
         for char in optimist_text:
             yield sse_event({'type': 'token', 'node': 'optimist', 'text': char})
             await asyncio.sleep(0.02)
-        
+
         yield sse_event({'type': 'speaker_end', 'node': 'optimist'})
-        
+
         # Skeptic
-        yield sse_event({'type': 'speaker', 'node': 'skeptic', 'text': f'第 {round_num} 輪'})
-        
-        skeptic_text = f"然而，我們必須謹慎看待「{topic}」。盲目樂觀可能導致忽視風險。"
+        yield sse_event({'type': 'speaker', 'node': 'skeptic', 'text': round_label})
+
+        if is_en:
+            skeptic_text = f"However, we must be cautious about '{topic}'. Blind optimism may lead to overlooking risks."
+        else:
+            skeptic_text = f"然而，我們必須謹慎看待「{topic}」。盲目樂觀可能導致忽視風險。"
+
         for char in skeptic_text:
             yield sse_event({'type': 'token', 'node': 'skeptic', 'text': char})
             await asyncio.sleep(0.02)
-        
+
         yield sse_event({'type': 'speaker_end', 'node': 'skeptic'})
-    
-    yield sse_event({'type': 'complete', 'text': f'✅ [FAKE] 辯論結束！共 {max_rounds} 輪。'})
+
+    msg_complete = f'✅ [FAKE] Debate ended! {max_rounds} rounds.' if is_en else f'✅ [FAKE] 辯論結束！共 {max_rounds} 輪。'
+    yield sse_event({'type': 'complete', 'text': msg_complete})
 
 
 # ============================================================
 # 真實 LLM 串流
 # ============================================================
-async def real_debate_stream(topic: str, max_rounds: int = 3):
+async def real_debate_stream(topic: str, max_rounds: int = 3, language: str = "zh"):
     """Phase 2: 真正的 Token-Level 串流"""
     from app.graph import (
-        get_llm, 
-        create_initial_state, 
-        build_prompt, 
+        get_llm,
+        create_initial_state,
+        build_prompt,
         update_state_after_speaker
     )
-    
-    yield sse_event({'type': 'status', 'text': '⚡ 正在喚醒 AI 辯論引擎...'})
-    
-    # 初始化
-    state = create_initial_state(topic, max_rounds)
-    
+
+    is_en = language == "en"
+
+    # i18n 訊息
+    msg_init = '⚡ Connecting to AI Debate Engine...' if is_en else '⚡ 正在喚醒 AI 辯論引擎...'
+    msg_model = f'🔥 Using model: {GROQ_MODEL}' if is_en else f'🔥 使用模型: {GROQ_MODEL}'
+    msg_llm_init_fail = 'LLM initialization failed: ' if is_en else 'LLM 初始化失敗: '
+    msg_llm_stream_fail = 'LLM stream interrupted: ' if is_en else 'LLM 串流中斷: '
+    msg_debate_error = '❌ Debate stopped due to error' if is_en else '❌ 辯論因錯誤而中斷'
+    msg_empty_response = 'LLM returned empty response' if is_en else 'LLM 返回空回應'
+
+    yield sse_event({'type': 'status', 'text': msg_init})
+
+    # 初始化（language 已整合進 state）
+    state = create_initial_state(topic, max_rounds, language)
+
     try:
         llm = get_llm()
-        yield sse_event({'type': 'status', 'text': f'🔥 使用模型: {GROQ_MODEL}'})
+        yield sse_event({'type': 'status', 'text': msg_model})
     except Exception as e:
-        yield sse_event({'type': 'error', 'text': f'LLM 初始化失敗: {str(e)}'})
+        yield sse_event({'type': 'error', 'text': f'{msg_llm_init_fail}{str(e)}'})
         return
-    
+
     # 辯論循環
     while state['current_speaker'] != 'end':
         speaker = state['current_speaker']
         round_num = state['round_count'] + 1
-        
+
         # 發送 speaker 開始事件
-        yield sse_event({'type': 'speaker', 'node': speaker, 'text': f'第 {round_num} 輪'})
-        
+        round_label = f'Round {round_num}' if is_en else f'第 {round_num} 輪'
+        yield sse_event({'type': 'speaker', 'node': speaker, 'text': round_label})
+
         # 建構 prompt
         messages = build_prompt(state, speaker)
-        
+
         # 直接呼叫 llm.astream() 實現 token 串流
         full_content = ""
         try:
@@ -167,27 +191,30 @@ async def real_debate_stream(topic: str, max_rounds: int = 3):
                     full_content += chunk.content
                     yield sse_event({'type': 'token', 'node': speaker, 'text': chunk.content})
         except Exception as e:
-            yield sse_event({'type': 'error', 'text': f'LLM 串流中斷: {str(e)}'})
+            yield sse_event({'type': 'error', 'text': f'{msg_llm_stream_fail}{str(e)}'})
             yield sse_event({'type': 'speaker_end', 'node': speaker})
-            yield sse_event({'type': 'complete', 'text': '❌ 辯論因錯誤而中斷'})
+            yield sse_event({'type': 'complete', 'text': msg_debate_error})
             return
-        
+
         # 發送 speaker 結束事件
         yield sse_event({'type': 'speaker_end', 'node': speaker})
-        
+
         # 更新狀態
         if full_content:
             state = update_state_after_speaker(state, speaker, full_content)
         else:
-            yield sse_event({'type': 'error', 'text': 'LLM 返回空回應'})
+            yield sse_event({'type': 'error', 'text': msg_empty_response})
             break
-    
+
     rounds_completed = state['round_count']
-    yield sse_event({'type': 'complete', 'text': f'✅ 辯論完成！共進行了 {rounds_completed} 輪精彩交鋒。'})
+    msg_complete = f'✅ Debate complete! {rounds_completed} exciting rounds.' if is_en else f'✅ 辯論完成！共進行了 {rounds_completed} 輪精彩交鋒。'
+    yield sse_event({'type': 'complete', 'text': msg_complete})
+
+
 # ============================================================
 # LangGraph StateGraph 串流（Phase 3c - ToolNode 架構）
 # ============================================================
-async def langgraph_debate_stream(topic: str, max_rounds: int = 3):
+async def langgraph_debate_stream(topic: str, max_rounds: int = 3, language: str = "zh"):
     """Phase 3c: 使用 ToolNode 實現工具事件追蹤
     
     架構改進：
@@ -196,11 +223,15 @@ async def langgraph_debate_stream(topic: str, max_rounds: int = 3):
     - 修復搜尋指示器無法顯示的問題
     """
     from app.graph import debate_graph, create_initial_state
-    
-    yield sse_event({'type': 'status', 'text': '⚡ 正在喚醒 AI 辯論引擎...'})
-    yield sse_event({'type': 'status', 'text': f'🔥 使用模型: {GROQ_MODEL} (LangGraph + Tools)'})
-    
-    state = create_initial_state(topic, max_rounds)
+
+    logger.info(f"🌐 langgraph_debate_stream received language: {language}")
+    is_en = language == "en"
+
+    yield sse_event({'type': 'status', 'text': '⚡ ' + ('Connecting to AI Debate Engine...' if is_en else '正在喚醒 AI 辯論引擎...')})
+    yield sse_event({'type': 'status', 'text': f'🔥 ' + ('Using model: ' if is_en else '使用模型: ') + f'{GROQ_MODEL} (LangGraph + Tools)'})
+
+    # 初始化（language 已整合進 state）
+    state = create_initial_state(topic, max_rounds, language)
     
     current_node = None
     round_count = 0
@@ -234,24 +265,27 @@ async def langgraph_debate_stream(topic: str, max_rounds: int = 3):
                     # 根據節點類型發送不同的 speaker 事件
                     if name == "moderator":
                         # Moderator 顯示特殊標記
+                        moderator_text = 'Summary Report' if is_en else '總結報告'
                         yield sse_event({
                             'type': 'speaker',
                             'node': 'moderator',
-                            'text': '總結報告'
+                            'text': moderator_text
                         })
                     else:
                         # Optimist/Skeptic 顯示輪數
                         display_round = round_count + 1
+                        round_text = f'Round {display_round}' if is_en else f'第 {display_round} 輪'
                         yield sse_event({
                             'type': 'speaker',
                             'node': name,
-                            'text': f'第 {display_round} 輪'
+                            'text': round_text
                         })
-            
+
             # 工具開始
             elif event_type == "on_tool_start":
                 tool_input = event.get("data", {}).get("input", {})
-                query = tool_input.get("query", "未知查詢") if isinstance(tool_input, dict) else str(tool_input)
+                unknown_query = "Unknown query" if is_en else "未知查詢"
+                query = tool_input.get("query", unknown_query) if isinstance(tool_input, dict) else str(tool_input)
                 current_tool_query = query
                 yield sse_event({
                     'type': 'tool_start',
@@ -284,17 +318,19 @@ async def langgraph_debate_stream(topic: str, max_rounds: int = 3):
         # 結束
         if current_node:
             yield sse_event({'type': 'speaker_end', 'node': current_node})
-        
+
+        msg_complete = f'✅ Debate complete! {round_count} exciting rounds.' if is_en else f'✅ 辯論完成！共進行了 {round_count} 輪精彩交鋒。'
         yield sse_event({
             'type': 'complete',
-            'text': f'✅ 辯論完成！共進行了 {round_count} 輪精彩交鋒。'
+            'text': msg_complete
         })
     
     except Exception as e:
         # 確保工具指示器被清除
         if current_tool_query:
             yield sse_event({'type': 'tool_end', 'tool': 'web_search', 'node': current_node or "unknown"})
-        yield sse_event({'type': 'error', 'text': f'LangGraph 錯誤: {str(e)}'})
+        msg_error = f'LangGraph error: {str(e)}' if is_en else f'LangGraph 錯誤: {str(e)}'
+        yield sse_event({'type': 'error', 'text': msg_error})
         if current_node:
             yield sse_event({'type': 'speaker_end', 'node': current_node})
 
@@ -312,12 +348,15 @@ async def start_debate(req: DebateRequest):
     3. USE_LANGGRAPH=false → real_debate_stream（Phase 2 回退）
     """
     
+    # Debug log
+    logger.info(f"🚀 /debate API received: topic='{req.topic[:30]}...', max_rounds={req.max_rounds}, language={req.language}")
+    
     if USE_FAKE_STREAM or not HAS_GROQ_KEY:
-        stream_generator = fake_debate_stream(req.topic, req.max_rounds)
+        stream_generator = fake_debate_stream(req.topic, req.max_rounds, req.language)
     elif USE_LANGGRAPH:
-        stream_generator = langgraph_debate_stream(req.topic, req.max_rounds)
+        stream_generator = langgraph_debate_stream(req.topic, req.max_rounds, req.language)
     else:
-        stream_generator = real_debate_stream(req.topic, req.max_rounds)
+        stream_generator = real_debate_stream(req.topic, req.max_rounds, req.language)
     
     return StreamingResponse(
         stream_generator,
@@ -337,8 +376,8 @@ async def start_debate(req: DebateRequest):
 async def root():
     return {
         "message": "Welcome to DebateAI API 🎭",
-        "version": "0.3.4",
-        "phase": "3d",
+        "version": "0.4.0",
+        "phase": "4",
         "docs": "/docs"
     }
 
@@ -355,7 +394,7 @@ async def health():
         "use_langgraph": USE_LANGGRAPH,
         "model": GROQ_MODEL if HAS_GROQ_KEY else None,
         "supabase_enabled": is_supabase_enabled(),
-        "note": "Phase 4: Supabase debate history"
+        "note": "Phase 4: Supabase debate history + i18n"
     }
 
 
@@ -417,4 +456,3 @@ async def get_debate_detail_endpoint(debate_id: str):
     else:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Debate not found")
-
