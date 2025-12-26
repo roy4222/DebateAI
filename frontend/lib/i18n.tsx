@@ -198,10 +198,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     if (savedLocale && (savedLocale === "zh" || savedLocale === "en")) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLocaleState(savedLocale);
-      // 同步更新 html lang 屬性
+      // 同步更新 html lang 屬性（layout.tsx 的腳本已經處理過，這裡確保同步）
       document.documentElement.lang = savedLocale === "zh" ? "zh-TW" : "en";
-      // 同步更新 cookie（以防 cookie 過期但 localStorage 還在）
-      document.cookie = `debate-language=${savedLocale}; path=/; max-age=31536000; SameSite=Lax`;
     } else {
       // 初始化時也要確保 lang 屬性正確（預設為中文）
       document.documentElement.lang = "zh-TW";
@@ -211,8 +209,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const setLocale = (newLocale: Locale) => {
     setLocaleState(newLocale);
     localStorage.setItem(STORAGE_KEY, newLocale);
-    // 同時設定 cookie，讓 SSR 可以讀取
-    document.cookie = `debate-language=${newLocale}; path=/; max-age=31536000; SameSite=Lax`;
     // 更新 html lang 屬性
     document.documentElement.lang = newLocale === "zh" ? "zh-TW" : "en";
   };

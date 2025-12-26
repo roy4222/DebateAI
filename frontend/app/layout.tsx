@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { cookies } from "next/headers";
 import "./globals.css";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -23,18 +22,36 @@ export const metadata: Metadata = {
   description: "讓 AI 辯手針對各種議題進行深度辯論",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // 從 cookie 讀取語言設定（SSR）
-  const cookieStore = await cookies();
-  const savedLocale = cookieStore.get('debate-language')?.value;
-  const htmlLang = savedLocale === 'en' ? 'en' : 'zh-TW';
-
   return (
-    <html lang={htmlLang} suppressHydrationWarning>
+    <html lang="zh-TW" suppressHydrationWarning>
+      <head>
+        {/*
+          立即執行腳本以避免 lang 屬性閃爍
+          注意：靜態導出限制 - SSR HTML 永遠是 lang="zh-TW"
+          此腳本僅在客戶端執行後生效，SEO/無 JS 環境會看到中文 lang
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var locale = localStorage.getItem('debateai-locale');
+                  if (locale === 'en') {
+                    document.documentElement.lang = 'en';
+                  } else {
+                    document.documentElement.lang = 'zh-TW';
+                  }
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
