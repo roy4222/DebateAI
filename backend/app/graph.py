@@ -148,25 +148,137 @@ tools = [web_search_tool]
 
 
 # ============================================================
-# LLM 工廠
+# LLM 工廠（含 Rate Limit 模型切換）
 # ============================================================
+
+# 預設備用模型列表（按優先順序排列）
+DEFAULT_FALLBACK_MODELS = [
+    "moonshotai/kimi-k2-instruct-0905",  # Moonshot Kimi K2，高品質
+    "llama-3.1-8b-instant",               # 高配額，快速
+]
+
+
+class RateLimitRetryLLM:
+    """LLM 包裝器：遇到 429 限流時自動切換模型
+    
+    特點：
+    - 維護一個「已限流」模型集合（cooldown_models）
+    - 遇到 429 時，將當前模型加入 cooldown，切換到下一個可用模型重試
+    - 所有模型都限流時，等待 retry-after 秒後重試主模型
+    """
+    
+    # 類級別變數：追蹤全局限流狀態
+    cooldown_models: set = set()
+    
+    def __init__(self, primary_model: str, fallback_models: list, bind_tools: bool = False):
+        self.primary_model = primary_model
+        self.fallback_models = fallback_models
+        self.bind_tools = bind_tools
+        self.api_key = os.getenv("GROQ_API_KEY")
+        self._current_model = primary_model
+        self._tools = tools if bind_tools else None
+    
+    def _get_available_model(self) -> str:
+        """取得目前可用的模型（排除已限流的）"""
+        all_models = [self.primary_model] + self.fallback_models
+        for model in all_models:
+            if model not in RateLimitRetryLLM.cooldown_models:
+                return model
+        # 所有模型都限流，返回主模型（會觸發等待）
+        logger.warning("All models in cooldown, resetting and using primary model")
+        RateLimitRetryLLM.cooldown_models.clear()
+        return self.primary_model
+    
+    def _create_llm(self, model_name: str):
+        """建立 ChatGroq 實例"""
+        llm = ChatGroq(
+            model=model_name,
+            temperature=0.7,
+            api_key=self.api_key,
+            streaming=True
+        )
+        if self._tools:
+            return llm.bind_tools(self._tools)
+        return llm
+    
+    async def ainvoke(self, messages, **kwargs):
+        """異步調用 LLM，遇到限流自動切換模型"""
+        import asyncio
+        
+        max_retries = len(self.fallback_models) + 2  # 嘗試所有模型 + 額外重試
+        last_error = None
+        
+        for attempt in range(max_retries):
+            current_model = self._get_available_model()
+            llm = self._create_llm(current_model)
+            
+            try:
+                logger.debug(f"RateLimitRetryLLM: attempt {attempt + 1}, model={current_model}")
+                response = await llm.ainvoke(messages, **kwargs)
+                
+                # 成功後，從 cooldown 移除此模型（如果之前被加入）
+                RateLimitRetryLLM.cooldown_models.discard(current_model)
+                self._current_model = current_model
+                return response
+                
+            except Exception as e:
+                error_str = str(e).lower()
+                
+                # 檢查是否為 429 限流錯誤
+                if "429" in str(e) or "rate" in error_str or "too many" in error_str:
+                    logger.warning(f"RateLimitRetryLLM: model {current_model} hit rate limit, switching...")
+                    RateLimitRetryLLM.cooldown_models.add(current_model)
+                    last_error = e
+                    
+                    # 如果還有其他模型可用，立即重試
+                    if len(RateLimitRetryLLM.cooldown_models) < len(self.fallback_models) + 1:
+                        continue
+                    else:
+                        # 所有模型都限流，等待一段時間後重置
+                        logger.warning("All models rate limited, waiting 10 seconds...")
+                        await asyncio.sleep(10)
+                        RateLimitRetryLLM.cooldown_models.clear()
+                        continue
+                else:
+                    # 非限流錯誤，直接拋出
+                    raise
+        
+        # 所有重試都失敗
+        raise last_error or Exception("All LLM retry attempts failed")
+    
+    @property
+    def current_model(self) -> str:
+        """返回當前使用的模型"""
+        return self._current_model
+
+
 def get_llm(bind_tools: bool = False):
-    """取得 LLM 實例
+    """取得 LLM 實例（含 Rate Limit 容錯）
 
     Args:
         bind_tools: 是否綁定工具（Phase 3c）
+    
+    環境變數：
+        GROQ_MODEL: 主要模型（預設 llama-3.1-8b-instant）
+        GROQ_FALLBACK_MODELS: 備用模型，逗號分隔（可選）
     """
-    model_name = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-    llm = ChatGroq(
-        model=model_name,
-        temperature=0.7,
-        api_key=os.getenv("GROQ_API_KEY"),
-        streaming=True
+    primary_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    
+    # 解析備用模型列表
+    fallback_env = os.getenv("GROQ_FALLBACK_MODELS", "")
+    if fallback_env:
+        fallback_models = [m.strip() for m in fallback_env.split(",") if m.strip()]
+    else:
+        # 使用預設列表，但排除主模型
+        fallback_models = [m for m in DEFAULT_FALLBACK_MODELS if m != primary_model]
+    
+    logger.debug(f"get_llm: primary={primary_model}, fallbacks={fallback_models}, bind_tools={bind_tools}")
+    
+    return RateLimitRetryLLM(
+        primary_model=primary_model,
+        fallback_models=fallback_models,
+        bind_tools=bind_tools
     )
-
-    if bind_tools:
-        return llm.bind_tools(tools)
-    return llm
 
 
 # ============================================================
