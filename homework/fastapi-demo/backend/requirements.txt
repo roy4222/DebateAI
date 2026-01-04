@@ -1,0 +1,3 @@
+fastapi[standard]
+mysql-connector-python
+pydantic
