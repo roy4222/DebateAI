@@ -16,9 +16,9 @@ def getDB():
     try:
         connection = mysql.connector.connect(
             host="localhost",
-            user="root",          # 請改成你的 MySQL 使用者名稱
-            password="",          # 請改成你的 MySQL 密碼
-            database="practice"   # 請改成你的資料庫名稱
+            user="root",
+            password="password123",  # 已設定的密碼
+            database="practice"
         )
         return connection
     except Error as e:

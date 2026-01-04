@@ -26,8 +26,10 @@ app = FastAPI(
 # ========== CORS 設定 ==========
 # 允許前端 (Next.js) 呼叫 API
 origins = [
-    "http://localhost:3000",      # Next.js 開發伺服器
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
 ]
 
 app.add_middleware(
